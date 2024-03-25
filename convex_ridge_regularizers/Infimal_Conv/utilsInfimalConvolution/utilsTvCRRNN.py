@@ -7,10 +7,12 @@ from torchmetrics.functional import structural_similarity_index_measure as ssim
 if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/inverse_problems/utils_inverse_problems")
+sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/utilsInfimalConvolution")
 sys.path.append('C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/others/tv')
-from reconstruction_map_crr import AdaGD_Recon, AdaAGD_Recon
-from reconstruction_map_tv import TV_Recon
 from tv_prox import CostTV
+from utilsTv import TV_reconstruction, Tv_denoising_reconstruction
+from reconstruction_map_crr import AdaGD_Recon, AdaAGD_Recon
+
 
 
 
@@ -41,6 +43,7 @@ def reconstruction_map_InfTVCRRNN(model, x_noisy, lmbdLagrange, alpha, beta, max
     H = lambda x: x
     Ht = lambda x: x
 
+    # with torch.no_grad() since we are in the final reconstruction phase
     with torch.no_grad():
         for i in tqdm(range(maxIter), desc = "Outer loop"):
             ### u-update ###
@@ -52,12 +55,11 @@ def reconstruction_map_InfTVCRRNN(model, x_noisy, lmbdLagrange, alpha, beta, max
 
             ### z-update ###
             data_b = torch.clone(u_k_1 - w - theta1)
-            z, psnrTV, ssimTv, nIterTv= TV_Recon(data_b, alpha = 1, lmbd = alpha/lmbdLagrange, H = H, Ht = Ht, x_gt = None, max_iter = maxIterTVRecon)
-
+            z = Tv_denoising_reconstruction(data_b, alpha = 1, lmbd = alpha/lmbdLagrange,  x_init = data_b, enforce_positivity = False)
 
             ### w-update ###
             data_b = torch.clone(u_k_1 -z - theta1)
-            w, psnrCRRNN, ssimCRRNN, nIterCRRNN = AdaAGD_Recon(y = data_b, H=H, Ht = Ht, model = model, lmbd = 2*beta/lmbdLagrange , mu = 1 ,tol=1e-6, max_iter = maxIterCRRNNRecon )
+            w, psnrCRRNN, ssimCRRNN, nIterCRRNN = AdaAGD_Recon(y = data_b, H=H, Ht = Ht, model = model, lmbd = 2*beta/lmbdLagrange , mu = 1 ,tol=1e-6, max_iter = maxIterCRRNNRecon, enforce_positivity = False )
 
             ### g-update ###
             data_b = torch.clone(u_k_1 + theta2)
@@ -66,7 +68,6 @@ def reconstruction_map_InfTVCRRNN(model, x_noisy, lmbdLagrange, alpha, beta, max
             ### theta-update ###
             theta1 = theta1 - u_k_1 + z + w
             theta2 = theta2 + u_k_1 - g
-
 
             # update u (for the computation of tol)
             u_k = u_k_1
