@@ -3,6 +3,7 @@ import cv2
 import matplotlib.pyplot as plt
 import os
 import sys
+from matplotlib.gridspec import GridSpec
 # Add of the corresponding paths to be enable to use the wanted functions
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/utilsInfimalConvolution")
 from utilsTv import TV_reconstruction, Tv_denoising_reconstruction
@@ -19,7 +20,8 @@ torch.manual_seed(61)
 device = 'cpu'
 
 # Load of the image (.jpg)
-img = cv2.resize(cv2.imread("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/Images/Mountain.jpg", cv2.IMREAD_GRAYSCALE), (504, 378))
+# img = cv2.resize(cv2.imread("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/Images/Lenna.png", cv2.IMREAD_GRAYSCALE), (504, 378))
+img = cv2.imread("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/Images/Lenna.png", cv2.IMREAD_GRAYSCALE)
 img_torch = torch.tensor(img, device = device).reshape((1,1) + img.shape)/255
 
 #Creation of the noisy image by adding some normal noise
@@ -27,42 +29,47 @@ img_torch_noisy = img_torch + 25/255 * torch.randn_like(img_torch)
 
 
 # Set of the hyperparameters to tune
-lmbd = 5e-1
+lmbd = 5e-2
 
 
 # Reconstruction of the denoised image (using only the proximal operator)
-img_denoised = Tv_denoising_reconstruction(img_torch_noisy, lmbd, x_init = img_torch_noisy)
+img_denoised = Tv_denoising_reconstruction(img_torch_noisy, lmbd)
 
 
 # Computation of the L2 error matrix
 L2error = torch.pow(img_denoised - img_torch, 2)
 
 
-fig, ax = plt.subplots(nrows=2, ncols=2, figsize=(18, 6))
+fig = plt.figure()
+gs = GridSpec(nrows= 2, ncols = 2)
+
+ax0 = fig.add_subplot(gs[0,0])
+ax0.set_title("Clean Image")
+ax0.imshow(img_torch.detach().cpu().squeeze(), cmap="gray", vmin=0, vmax=1)
+ax0.set_yticks([])
+ax0.set_xticks([])
+
+ax1 = fig.add_subplot(gs[0,1])
+ax1.set_title("Noisy Image ")
+ax1.imshow(img_torch_noisy.detach().cpu().squeeze(), cmap="gray", vmin=0, vmax=1)
+ax1.set_yticks([]) 
+ax1.set_xticks([])
+
+ax2 = fig.add_subplot(gs[1,0])
+ax2.set_title("Denoised Image")
+ax2.imshow(img_denoised.detach().cpu().squeeze(), cmap="gray", vmin=0, vmax=1)
+ax2.set_yticks([])
+ax2.set_xticks([])
+
+ax3 = fig.add_axes([0.57 , 0.1, 0.35, 0.35])
+ax3.set_title("L2 error")
+caxes = ax3.matshow(L2error.squeeze().detach().numpy(), vmin = 0.0, vmax = 0.02)
+fig.colorbar(caxes, ax = ax3)
+ax3.set_yticks([])
+ax3.set_xticks([])
 
 
-ax[0][0].set_title("Clean Image ")
-ax[0][0].imshow(img_torch.detach().cpu().squeeze(), cmap="gray", vmin=0, vmax=1)
-ax[0][0].set_yticks([])
-ax[0][0].set_xticks([])
-
-ax[0][1].set_title("Noisy Image ")
-ax[0][1].imshow(img_torch_noisy.detach().cpu().squeeze(), cmap="gray", vmin=0, vmax=1)
-ax[0][1].set_yticks([]) 
-ax[0][1].set_xticks([])
-
-
-ax[1][0].set_title("Denoised Image")
-ax[1][0].imshow(img_denoised.detach().cpu().squeeze(), cmap="gray", vmin=0, vmax=1)
-ax[1][0].set_yticks([])
-ax[1][0].set_xticks([])
-
-ax[1][1].set_title("L2 error")
-ax[1][1].matshow(L2error.squeeze().detach().numpy())
-ax[1][1].set_yticks([])
-ax[1][1].set_xticks([])
-
-fileName = f"2503DenoisedMountain{lmbd*100:.0f}.png"
+fileName = f"0304DenoisedLenna{lmbd*100:.0f}.png"
 path = os.path.join("Infimal_Conv/tv/ResultsTV", fileName) 
 plt.savefig(path)
 

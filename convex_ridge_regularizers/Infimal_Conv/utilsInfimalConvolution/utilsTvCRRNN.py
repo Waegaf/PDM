@@ -23,15 +23,18 @@ def reconstruction_map_InfTVCRRNN(model, x_noisy, lmbdLagrange, alpha, beta, max
     maxIterCRRNNRecon = kwargs.get('maxIterCRRNNRecon', 200)
     trackCost = kwargs.get('trackCost', False)
     stopTol = kwargs.get('stopTol', 1e-4)
+    x_init = kwargs.get('x_init', None)
 
     if trackCost:
         regCostList = []
         psnrList = []
         ssimList = []
 
+    if x_init is None:
+        u_k = torch.zeros_like(x_noisy)
+    else:
+        u_k = torch.clone(x_init)
 
-    u_k = torch.clone(x_noisy)
-    # u_k = torch.ones_like(x_noisy)
     z = torch.clone(u_k)
     w = torch.clone(u_k)
     g = torch.clone(u_k)
