@@ -7,7 +7,7 @@ from matplotlib.gridspec import GridSpec
 # Add of the corresponding paths to be enable to use the wanted functions
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers")
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/utilsInfimalConvolution")
-from utilsTvCRRNN import reconstruction_map_InfTVCRRNN, Regularization_cost_InfTVCRRNN
+from utilsTvCRRNN import reconstruction_map_InfTVCRRNN
 from models import utils
 
 # Creation of a folder to save the results
@@ -41,7 +41,7 @@ alpha = 5e-2
 beta = 30
 
 # image_cleaned corresponds to u in the computations
-img_denoised, z, w, g, psnrImg, ssimImg, regCost = reconstruction_map_InfTVCRRNN(model = model, x_noisy=img_torch_noisy, lmbdLagrange=lmbdLagrange, alpha = alpha, beta = beta, maxIter= 200, x_origin=img_torch, maxIterTVRecon = 100, maxIterCRRNNRecon = 100, trackCost = True)
+img_denoised, z, w, g, psnrImg, ssimImg = reconstruction_map_InfTVCRRNN(model = model, x_noisy=img_torch_noisy, lmbdLagrange=lmbdLagrange, alpha = alpha, beta = beta, maxIter= 200, x_origin=img_torch, maxIterTVRecon = 100, maxIterCRRNNRecon = 100, trackCost = True)
 
 # Computation of the L2 error matrix
 L2Error = torch.pow(img_denoised - img_torch, 2)
@@ -52,7 +52,7 @@ gs = GridSpec(nrows= 2, ncols = 3)
 
 ax0 = fig.add_subplot(gs[0,0])
 ax0.set_title("L2 Error")
-caxes  = ax0.matshow(L2Error.squeeze().detach().numpy(), vmin = 0.0, vmax = 0.02)
+caxes  = ax0.matshow(L2Error.squeeze().detach().numpy(), vmin = 0.0, vmax = 0.05)
 fig.colorbar(caxes, ax = ax0)
 ax0.set_xticks([])
 ax0.set_yticks([])
@@ -84,7 +84,7 @@ ax5.imshow(img_denoised.detach().cpu().squeeze(), cmap="gray", vmin=0, vmax=1)
 ax5.set_yticks([])
 ax5.set_xticks([])
 
-fileName = f"0404LennaA{alpha*100:.0f}B{beta:.0f}S{sigma_training:.0f}t{t:.0f}.png"
+fileName = f"1204LennaA{alpha*100:.0f}B{beta:.0f}S{sigma_training:.0f}t{t:.0f}.png"
 path = os.path.join("Infimal_Conv/InfimalConvolution/ResultsInfConv", fileName) 
 plt.savefig(path)
 

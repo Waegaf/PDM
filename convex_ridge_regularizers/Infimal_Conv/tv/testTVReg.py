@@ -63,13 +63,13 @@ ax2.set_xticks([])
 
 ax3 = fig.add_axes([0.57 , 0.1, 0.35, 0.35])
 ax3.set_title("L2 error")
-caxes = ax3.matshow(L2error.squeeze().detach().numpy(), vmin = 0.0, vmax = 0.02)
+caxes = ax3.matshow(L2error.squeeze().detach().numpy(), vmin = 0.0, vmax = 0.05)
 fig.colorbar(caxes, ax = ax3)
 ax3.set_yticks([])
 ax3.set_xticks([])
 
 
-fileName = f"0304DenoisedLenna{lmbd*100:.0f}.png"
+fileName = f"1204DenoisedLenna{lmbd*100:.0f}.png"
 path = os.path.join("Infimal_Conv/tv/ResultsTV", fileName) 
 plt.savefig(path)
 
