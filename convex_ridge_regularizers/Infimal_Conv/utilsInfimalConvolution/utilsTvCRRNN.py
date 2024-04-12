@@ -2,15 +2,14 @@ import torch
 import sys
 import os
 from tqdm import tqdm
+import torch.autograd as autograd
 from torchmetrics.functional import peak_signal_noise_ratio as psnr
 from torchmetrics.functional import structural_similarity_index_measure as ssim
 if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/inverse_problems/utils_inverse_problems")
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/utilsInfimalConvolution")
-sys.path.append('C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/others/tv')
-from tv_prox import CostTV
-from utilsTv import TV_reconstruction, Tv_denoising_reconstruction
+from utilsTv import TV_reconstruction, Tv_denoising_reconstruction, MoreauProximator
 from reconstruction_map_crr import AdaGD_Recon, AdaAGD_Recon
 
 
@@ -26,21 +25,21 @@ def reconstruction_map_InfTVCRRNN(model, x_noisy, lmbdLagrange, alpha, beta, max
     x_init = kwargs.get('x_init', None)
 
     if trackCost:
-        regCostList = []
         psnrList = []
         ssimList = []
 
     if x_init is None:
         u_k = torch.zeros_like(x_noisy)
     else:
+        pass
         u_k = torch.clone(x_init)
 
-    z = torch.clone(u_k)
-    w = torch.clone(u_k)
-    g = torch.clone(u_k)
+    z = torch.zeros_like(u_k)
+    w = torch.zeros_like(u_k)
+    g = torch.zeros_like(u_k)
 
-    theta1 = torch.clone(u_k)
-    theta2 = torch.clone(u_k)
+    theta1 = torch.zeros_like(u_k)
+    theta2 = torch.zeros_like(u_k)
 
     ## Initialization of the parameters for CRRNN ##
     H = lambda x: x
@@ -51,14 +50,12 @@ def reconstruction_map_InfTVCRRNN(model, x_noisy, lmbdLagrange, alpha, beta, max
         for i in tqdm(range(maxIter), desc = "Outer loop"):
             ### u-update ###
             u_k_1 = (1/(1+2*lmbdLagrange))* (x_noisy + lmbdLagrange*(z + w + theta1 + g - theta2))
-            # relativeError = norm(u_k_1 - u_k) / norm(u_k_1)
-            # tol = norm(u_k_1 - u_k)/norm(u_k_1);
             tol = torch.sum(torch.pow(u_k_1 - u_k, 2)).item() / torch.sum(torch.pow(u_k_1, 2)).item()
 
 
             ### z-update ###
             data_b = torch.clone(u_k_1 - w - theta1)
-            z = Tv_denoising_reconstruction(data_b, alpha = 1, lmbd = alpha/lmbdLagrange,  x_init = data_b, enforce_positivity = False)
+            z = Tv_denoising_reconstruction(data_b,  lmbd = alpha/lmbdLagrange,  x_init = data_b, enforce_positivity = False)
 
             ### w-update ###
             data_b = torch.clone(u_k_1 -z - theta1)
@@ -78,43 +75,33 @@ def reconstruction_map_InfTVCRRNN(model, x_noisy, lmbdLagrange, alpha, beta, max
             if x_origin is not None:
                 psnrImg = psnr(u_k, x_origin, data_range= 1.0).item()
                 ssimImg = ssim(u_k, x_origin, data_range = 1.0).item()
-                regCost = Regularization_cost_InfTVCRRNN(u_k, z, w, g, model, lmbdLagrange, alpha, beta)
             else:
                 psnrImg = None
                 ssimImg = None
-                regCost = Regularization_cost_InfTVCRRNN(u_k, z, w, g, model, lmbdLagrange, alpha, beta)
             
             if trackCost:
                 psnrList.append(psnrImg)
                 ssimList.append(ssimImg)
-                regCostList.append(regCost)
 
             if tol < stopTol:
                 break
 
     if trackCost:
-        return u_k, z, w, g, psnrList, ssimList, regCostList
+        return u_k, z, w, g, psnrList, ssimList
     else:
-        return u_k, z, w, g, psnrImg, ssimImg, regCost
+        return u_k, z, w, g, psnrImg, ssimImg
 
 
 
-def Regularization_cost_InfTVCRRNN(u, z, w, g, model, lmbdLagrange, alpha, beta):
-
-    cost_tv = CostTV(z.squeeze().shape, alpha, device = 'cpu')
-    costtv = cost_tv.apply(z).item()
-
-    costCRRNN = (beta * model.cost(w)).item()
-
-    g0 = torch.zeros_like(g)
-    g0[g < 0] = 1
-    costKsi = torch.count_nonzero(g0).item()
-
-    firstConstraint = torch.sum(torch.pow(u - z - w, 2)).item()
-    secondConstraint = torch.sum(torch.pow(u - g, 2)).item()
 
 
-    return (costtv + costCRRNN + costKsi + lmbdLagrange*(firstConstraint + secondConstraint))
+
+
+         
+
+
+
+
 
 
 

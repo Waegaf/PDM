@@ -9,7 +9,7 @@ import pylops_gpu
 # Projection function to the box(xmin,xmax), i.e. ensure that xmin <= x <= xmax.
 def projectionBox(x, xmin, xmax):
     # If there are no constraint, we simply return x
-    if xmin is None or xmax is None:
+    if xmin is None and xmax is None:
         return x
     out = torch.clamp(x, min = xmin, max = xmax)
     return out
@@ -38,16 +38,17 @@ class LinearOperator:
         self.L_1.Op.h[0,0,1] = -1
         self.L_1.Op.h[0,0,2] = 0
 
-    # Implementation of the application of the ajdoint of L, L^t
+    # Implementation of the application of the ajdoint of L, L^t (i.e. the gradient)
     def applyL_t(self, x):
         x = x.to(torch.float)
         x.to(self.device)
+        # The operators have to be applied on a flatten version of x
         out_0 = self.L_0*(x.reshape(-1))
         out_1 = self.L_1*(x.reshape(-1))
         out = torch.cat([torch.reshape(out_0, (1, self.height, self.width)), torch.reshape(out_1, (1, self.height, self.width))], dim = 0)
         return out # 2 x ... x ....
     
-    # Implementation of the application of L
+    # Implementation of the application of L (i.e -div)
     def applyL(self, y):
         y = y.to(self.device)
         out = torch.reshape(self.L_0.H*(y[0,...].view(-1)), (self.height, self.width)) + torch.reshape(self.L_1.H*(y[1,...].view(-1)), (self.height, self.width))
@@ -101,6 +102,27 @@ class MoreauProximator:
             
 
         return projectionBox(u-alpha*self.L.applyL(P), self.bounds[0], self.bounds[1])
+    
+    def applyProxPrimalDual(self,u, alpha):
+        # Initialization phase
+        alpha = alpha * self.lmbd
+        P = torch.zeros(2, self.sizein[0], self.sizein[1], device = u.device)
+        F = torch.zeros(2, self.sizein[0], self.sizein[1], device = u.device)
+        t = 1.0
+
+        # Begin of the iterations
+        for iteration in range(self.num_iter):
+            Pnew = F + (self.gamma/alpha)*(self.L.applyL_t(projectionBox(u - alpha*self.L.applyL(F),self.bounds[0], self.bounds[1])))
+            tmp = torch.clamp(torch.sqrt(torch.sum(torch.pow(Pnew, 2), dim=0)), min=1.0)
+            Pnew = Pnew/tmp.expand(2, self.sizein[0], self.sizein[1])
+            tnew = (1 + math.sqrt(1 + 4*(t**2)))/2
+            F = Pnew + (t-1)/tnew*(Pnew -P)
+            t = tnew
+            P = Pnew
+            
+
+        return (projectionBox(u-alpha*self.L.applyL(P), self.bounds[0], self.bounds[1]), P)
+
         
 
 
@@ -162,13 +184,7 @@ def TV_reconstruction(y, alpha, lmbd, H, Ht, x_gt, **kwargs):
 # the proximal map of Moreau.
 def Tv_denoising_reconstruction(y, lmbd, **kwargs):
 
-    x_init = kwargs.get('x_init', None)
     enforce_positivity = kwargs.get('enforce_positivity', True)
-
-    if x_init is None:
-        x = torch.zeros_like(y)
-    else:
-        x = x_init.clone()
 
     if enforce_positivity:
         bounds = [0.0, float('Inf')]
