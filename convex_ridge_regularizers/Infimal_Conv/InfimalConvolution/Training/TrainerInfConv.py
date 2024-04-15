@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import DataLoader
 import os, sys
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/training")
-from training.data import dataset
+from data import dataset
 import json
 from torch.utils import tensorboard
 from tqdm import tqdm
@@ -12,7 +12,7 @@ from torchmetrics.functional import peak_signal_noise_ratio as psnr
 ssim = StructuralSimilarityIndexMeasure()
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers")
 from models.utils import build_model
-from utilsInfimalConvolution.utilsInfConvTraining import tstepInfConvDenoiser
+from Infimal_Conv.utilsInfimalConvolution.utilsInfConvTraining import tstepInfConvDenoiser
 
 
 class TrainerInfConv:
@@ -55,7 +55,7 @@ class TrainerInfConv:
 
         self.criterion = torch.nn.L1Loss(reduction = 'sum')
 
-        self.save_epoch = config["logging_info"]['svae_epoch']
+        self.save_epoch = config["logging_info"]['save_epoch']
 
 
         # CHECKPOINTS & TENSOROARD
