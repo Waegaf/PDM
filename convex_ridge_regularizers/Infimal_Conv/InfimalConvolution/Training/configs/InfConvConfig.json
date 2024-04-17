@@ -28,7 +28,7 @@
     },
     "sigma": 25,
     "train_dataloader": {
-        "batch_size": 1,
+        "batch_size": 8,
         "num_workers": 1,
         "shuffle": true,
         "train_data_file": "C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/preprocessed/BSD/train.h5"

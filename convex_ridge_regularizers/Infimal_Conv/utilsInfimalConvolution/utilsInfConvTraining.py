@@ -18,7 +18,7 @@ from reconstruction_map_crr import AdaGD_Recon, AdaAGD_Recon
 
 def TV_Solver_Training(y, lmbd):
     bounds = [None, None]
-    moreauProx = MoreauProximator(y.squeeze.shape(), lmbd, bounds, device = y.device)
+    moreauProx = MoreauProximator(y.squeeze().shape, lmbd, bounds, device = y.device)
     z, P = moreauProx.applyProxPrimalDual(y, alpha = 1.0)
     return z, P
 
@@ -102,26 +102,26 @@ def K_fixedPoint(z, P, data, lmbdLagrange, alpha, tau = 1e-2):
     return vectorize(K_1, K_2)
 
 
-def H_fixedPoint(x):
-    pass
+def H_fixedPoint(x, model, data, lmbdLagrange, beta, mu):
+    return (x-data) + beta/lmbdLagrange*(model(mu*x))
 
 
 
-def tstepInfConvDenoiser(model, x_noisy, t_steps, alpha, beta, **kwargs):
+def tstepInfConvDenoiser(model, x_noisy, t_steps, alpha,  **kwargs):
     lmbdLagrange = kwargs.get('lmbdLagrange', 1e-2)
 
 
     # learnable regularization parameters
-    lmbd = model.lmbd_transformed
+    beta = model.lmbd_transformed
     mu = model.mu_transformed
 
-    # Lipschitz bound of the model estimated in a differentiable way
-    if model.training:
-        L = torch.clip(model.precise_lipschitz_bound(n_iter = 2, differentiable = True,), 0.1, None)
+    # Lipschitz bound of the model estimated in a differentiable way (We probably won't use it with AdaAGD_Recon. So, we should not use it)
+    # if model.training:
+    #     L = torch.clip(model.precise_lipschitz_bound(n_iter = 2, differentiable = True,), 0.1, None)
 
-        model.L.data = L
-    else:
-        L = model.L
+    #     model.L.data = L
+    # else:
+    #     L = model.L
 
     # Initialization of the tensors
     z = torch.zeros_like(x_noisy)
@@ -137,26 +137,30 @@ def tstepInfConvDenoiser(model, x_noisy, t_steps, alpha, beta, **kwargs):
     for t in range(t_steps):
         # Differentiable stpes
         # u-update
-        u = (1/(2*lmbdLagrange))*(x_noisy + lmbdLagrange*(z + w + Theta1 + g -Theta2))
+        u = (1/(1 + 2*lmbdLagrange))*(x_noisy + lmbdLagrange*(z + w + Theta1 + g -Theta2))
 
         # z-update
         with torch.no_grad():
-            data_z = u - w - Theta1
+            data_z = torch.clone(u - w - Theta1)
             z, P = TV_Solver_Training(data_z, lmbd = alpha/lmbdLagrange)
         y = vectorize(z, P)
         y = y - K_fixedPoint(z, P, data_z, lmbdLagrange = lmbdLagrange, alpha = alpha)
-        jacobianY = autograd.functional.jacobian(lambda x: K_fixedPoint(*matricize(x), data_z))
-        y.register_hook(lambda grad: torch.linalg.solve(jacobianY.transpose(), grad))
-        z, P = matricize(y)
+        jacobianY = autograd.functional.jacobian(lambda x: K_fixedPoint(*matricize(x, z, P), data = data_z, lmbdLagrange = lmbdLagrange, alpha = alpha), y)
+        if y.requires_grad:
+            y.register_hook(lambda grad: torch.linalg.solve(jacobianY.transpose(), grad))
+        z, P = matricize(y, z, P)
 
         # w-update
         with torch.no_grad():
              data_w = u - z -Theta1
-             w = CRR_NN_Solver_Training(y = data_w, H=H, Ht = Ht, model = model, lmbd = 2*beta/lmbdLagrange , mu = 1 ,tol=1e-6, max_iter = 100, enforce_positivity = False )
+             w = CRR_NN_Solver_Training(y = data_w, model = model, lmbd = 2*beta/lmbdLagrange , mu = 1, max_iter = 200)
             
-        w = w - H_fixedPoint(w, data_w)
-        jacobianW = autograd.function.jacobian(lambda x: H_fixedPoint(x, data_w))
-        w.register_hook(lambda grad: torch.linalg.solve(jacobianW.transpose(), grad))
+        y = w.view(-1)
+        y1 = H_fixedPoint(w, model, data_w, lmbdLagrange = lmbdLagrange, beta = beta, mu = mu)
+        y = y - y1.view(-1)
+        jacobianW = autograd.functional.jacobian(lambda x: H_fixedPoint(x.view_as(w), model, data_w, lmbdLagrange = lmbdLagrange, beta = beta, mu = mu), y)
+        if w.requires_grad:
+            w.register_hook(lambda grad: torch.linalg.solve(jacobianW.transpose(), grad))
 
         # g-update
         g = torch.clip(u + Theta2, 0, None)

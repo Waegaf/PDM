@@ -69,7 +69,7 @@ ax3.set_yticks([])
 ax3.set_xticks([])
 
 
-fileName = f"1204DenoisedLenna{lmbd*100:.0f}.png"
+fileName = f"1504DenoisedLenna{lmbd*100:.0f}.png"
 path = os.path.join("Infimal_Conv/tv/ResultsTV", fileName) 
 plt.savefig(path)
 

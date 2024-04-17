@@ -143,6 +143,7 @@ class TrainerInfConv:
         log = {}
 
         for batch_idx, data in enumerate(tbar):
+            print("SIIIIIIIZE", data.shape)
             data = data.to(self.device)
             noise = self.sigma/255 * torch.randn(data.shape, device = data.device)
             noisy_data = data + noise

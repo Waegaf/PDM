@@ -57,13 +57,67 @@ class LinearOperator:
         return out # 1 x 1 x K x K
 
 
+class LinearOperatorBatch:
+    
+    def __init__(self, sizein, device) -> None:
+        # Attributes
+        # Number of samples in direction 0
+        self.height = sizein[0]
+        # Number of samples in direction 1
+        self.width = sizein[1]
+        # Device to work on (available since we work with pylops-gpu)
+        self.device = device
+
+        self.L_0 = pylops_gpu.FirstDerivative(N = self.height*self.width, dims = (self.height, self.width), dir = 0, device = self.device, togpu= (True, True))
+        # Modification of the matrix of convolution H which is, by default, set to [0.5, 0, -0.5]. We need [1, -1, 0] (or [-1, 1, 0])
+        self.L_0.Op.h[0,0,0] = 1
+        self.L_0.Op.h[0,0,1] = -1
+        self.L_0.Op.h[0,0,2] = 0
+        self.batchL_0 = pylops_gpu.TorchOperator(self.L_0.Op, True)
+
+        self.L_1 = pylops_gpu.FirstDerivative(N = self.height*self.width, dims = (self.height, self.width), dir = 1, device = self.device, togpu= (True, True))
+        self.L_1.Op.h[0,0,0] = 1
+        self.L_1.Op.h[0,0,1] = -1
+        self.L_1.Op.h[0,0,2] = 0
+        self.batchL_1 = pylops_gpu.TorchOperator(self.L_1.Op, True)
+
+    
+    # Implementation of the application of the ajdoint of L, L^t (i.e. the gradient)
+    def batch_applyL_t(self, x):
+        '''Input: x is a batch of images => x is of size (nbatches, 1, heigth, width)'''
+        x = x.to(torch.float)
+        x.to(self.device)
+        nbatches = x.shape[0]
+        x.squeeze()
+
+        # The operators have to be applied on a flatten version of the samples of x
+        out_0 = self.batchL_0.apply(x.reshape(nbatches, self.height*self.width))
+        out_1 = self.batchL_1.apply(x.reshape(nbatches, self.height*self.width))
+        out = torch.cat([torch.reshape(out_0, (nbatches, self.height, self.width)).unsqueeze(1), torch.reshape(out_1, (nbatches, self.height, self.width)).unsqueeze(1)], dim = 1)
+        return out # nbatches x 2 x height x width
+    
+
+    # Implementation of the application of L (i.e -div)
+    def batch_applyL(self, y):
+        '''Input: y is a batch of gradient of images => y is of size (nbatches, 2, heigth, width)'''
+        y = y.to(self.device)
+        nbatches = y.shape[0]
+        out = torch.empty(nbatches, self.height,self.width)
+        for i in range(nbatches):
+            o1 = self.L_0.H*(y[i,0,...].view(-1))
+            out[i,...] = torch.reshape(o1, (self.height, self.width)) + torch.reshape(self.L_1.H*(y[i,0,...].view(-1)), (self.height, self.width))
+        out = out.unsqueeze(1)
+        return out # nbatches x 1 x height x width
+
+
+
 
 
 
 # Implemantaion of the proximal map of Moreau (Beck and Teboulle, 2008), that we called MoreauProximator
 class MoreauProximator:
 
-    def __init__(self, sizein, lmbd, bounds, device):
+    def __init__(self, sizein, lmbd, bounds, device, batch = False):
         
         # Attributes
         # Dimension of the image ([height, width])
@@ -76,6 +130,8 @@ class MoreauProximator:
         self.bounds = bounds
         # LinearOperator L
         self.L = LinearOperator(sizein, device)
+        if batch:
+            self.batchL = LinearOperatorBatch(sizein, device)
 
         # Parameters related to the FGP algorithm
         self.gamma = 1.0/8
@@ -103,11 +159,30 @@ class MoreauProximator:
 
         return projectionBox(u-alpha*self.L.applyL(P), self.bounds[0], self.bounds[1])
     
+    def batch_applyProx(self, u, alpha):
+        # Initialization phase
+        nbatches = u.shape[0]
+        alpha = alpha * self.lmbd
+        P = torch.zeros(nbatches, 2, self.sizein[0], self.sizein[1], device = u.device)
+        F = torch.zeros(nbatches, 2, self.sizein[0], self.sizein[1], device = u.device)
+        t = 1.0
+
+        for iteration in range(self.num_iter):
+            Pnew = F + (self.gamma/alpha)*(self.batchL.batch_applyL_t(projectionBox(u - alpha*self.batchL.batch_applyL(F),self.bounds[0], self.bounds[1])))
+            tmp = torch.clamp(torch.sqrt(torch.sum(torch.pow(Pnew, 2), dim=1)), min=1.0).unsqueeze(1)
+            Pnew = Pnew/tmp.expand(-1, 2, -1, -1)
+            tnew = (1 + math.sqrt(1 + 4*(t**2)))/2
+            F = Pnew + (t-1)/tnew*(Pnew -P)
+            t = tnew
+            P = Pnew
+        return projectionBox(u-alpha*self.batchL.batch_applyL(P), self.bounds[0], self.bounds[1])
+
+    
     def applyProxPrimalDual(self,u, alpha):
         # Initialization phase
         alpha = alpha * self.lmbd
-        P = torch.zeros(2, self.sizein[0], self.sizein[1], device = u.device)
-        F = torch.zeros(2, self.sizein[0], self.sizein[1], device = u.device)
+        P = torch.cat((torch.zeros_like(u), torch.zeros_like(u)), dim = 1).squeeze()
+        F = torch.cat((torch.zeros_like(u), torch.zeros_like(u)), dim = 1).squeeze()
         t = 1.0
 
         # Begin of the iterations
@@ -121,7 +196,26 @@ class MoreauProximator:
             P = Pnew
             
 
-        return (projectionBox(u-alpha*self.L.applyL(P), self.bounds[0], self.bounds[1]), P)
+        return projectionBox(u-alpha*self.L.applyL(P), self.bounds[0], self.bounds[1]), P
+    
+
+    def batch_applyProxPrimalDual(self, u, alpha):
+        # Initialization phase
+        nbatches = u.shape[0]
+        alpha = alpha * self.lmbd
+        P = torch.zeros(nbatches, 2, self.sizein[0], self.sizein[1], device = u.device)
+        F = torch.zeros(nbatches, 2, self.sizein[0], self.sizein[1], device = u.device)
+        t = 1.0
+
+        for iteration in range(self.num_iter):
+            Pnew = F + (self.gamma/alpha)*(self.batchL.batch_applyL_t(projectionBox(u - alpha*self.batchL.batch_applyL(F),self.bounds[0], self.bounds[1])))
+            tmp = torch.clamp(torch.sqrt(torch.sum(torch.pow(Pnew, 2), dim=1)), min=1.0)
+            Pnew = Pnew/tmp.expand(-1, 2, -1, -1)
+            tnew = (1 + math.sqrt(1 + 4*(t**2)))/2
+            F = Pnew + (t-1)/tnew*(Pnew -P)
+            t = tnew
+            P = Pnew
+        return projectionBox(u-alpha*self.batchL.batch_applyL(P), self.bounds[0], self.bounds[1]), P
 
         
 
