@@ -142,23 +142,6 @@ def tStepDenoiser(model, x_noisy, t_steps=50):
 
 
 
-
-
-
-    
-
-def tStepDenoiserInfConv(model, x_noisy, t_setps = 50, eps = 1e-2):
-    lmbd = model.lmbd_transformed
-    mu = model.mu_transformed
-
-    x = torch.clone(x_noisy)
-    stepSize = 0.01
-    
-    for i in range(t_setps):
-        pass
-        
-    return(x)
-
 def AdaGD(x_noisy, model, lmbd=1, mu=1, **kwargs):
     """denoising with CRR-NNs using the adaptive gradient descent scheme"""
 
