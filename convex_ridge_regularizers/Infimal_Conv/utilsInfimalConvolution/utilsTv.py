@@ -104,8 +104,7 @@ class LinearOperatorBatch:
         nbatches = y.shape[0]
         out = torch.empty(nbatches, self.height,self.width)
         for i in range(nbatches):
-            o1 = self.L_0.H*(y[i,0,...].view(-1))
-            out[i,...] = torch.reshape(o1, (self.height, self.width)) + torch.reshape(self.L_1.H*(y[i,0,...].view(-1)), (self.height, self.width))
+            out[i,...] = torch.reshape(self.L_0.H*(y[i,0,...].view(-1)), (self.height, self.width)) + torch.reshape(self.L_1.H*(y[i,1,...].view(-1)), (self.height, self.width))
         out = out.unsqueeze(1)
         return out # nbatches x 1 x height x width
 
@@ -155,8 +154,6 @@ class MoreauProximator:
             F = Pnew + (t-1)/tnew*(Pnew -P)
             t = tnew
             P = Pnew
-            
-
         return projectionBox(u-alpha*self.L.applyL(P), self.bounds[0], self.bounds[1])
     
     def batch_applyProx(self, u, alpha):
@@ -209,7 +206,7 @@ class MoreauProximator:
 
         for iteration in range(self.num_iter):
             Pnew = F + (self.gamma/alpha)*(self.batchL.batch_applyL_t(projectionBox(u - alpha*self.batchL.batch_applyL(F),self.bounds[0], self.bounds[1])))
-            tmp = torch.clamp(torch.sqrt(torch.sum(torch.pow(Pnew, 2), dim=1)), min=1.0)
+            tmp = torch.clamp(torch.sqrt(torch.sum(torch.pow(Pnew, 2), dim=1)), min=1.0).unsqueeze(1)
             Pnew = Pnew/tmp.expand(-1, 2, -1, -1)
             tnew = (1 + math.sqrt(1 + 4*(t**2)))/2
             F = Pnew + (t-1)/tnew*(Pnew -P)

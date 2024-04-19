@@ -1,8 +1,9 @@
 import torch
 from torch.utils.data import DataLoader
+import sys
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/training")
 from data import dataset
-import os, sys
+import os
 import json
 from torch.utils import tensorboard
 from tqdm import tqdm
@@ -15,7 +16,7 @@ from models.utils import build_model
 ssim = StructuralSimilarityIndexMeasure()
 
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/utilsInfimalConvolution")
-from utilsInfimalTraining import CRR_NN_Solver_Training, H_fixedPoint
+from utilsInfConvTraining import CRR_NN_Solver_Training, H_fixedPoint
 
 
 
@@ -57,7 +58,6 @@ class TrainerCRRNN:
         self.set_optimization()
         self.epochs = config["training_options"]['epochs']
 
-        self.denoise = self.tStepDenoiser
   
         self.criterion = torch.nn.L1Loss(reduction='sum')
         
@@ -160,15 +160,23 @@ class TrainerCRRNN:
             ### IMPLICIT LAYER ###
             nbatches = data.shape[0]
             with torch.no_grad():
-                output = CRR_NN_Solver_Training(data, self.model, lmbd = self.model.lmbd_transformed, mu = self.model.mu_transformed, max_iter = 200, batch = True)
-                flatten_output = output.view(-1)
-
-            flatten_output = flatten_output - H_fixedPoint(flatten_output.view_as(output), self.model, data, lmbdLagrange = 1., beta = self.model.lmbd_transformed, mu = self.model.mu_transformed).view(-1)
-            jacobian_flatten_output = autograd.functional.jacobian(lambda x: H_fixedPoint(x.view_as(output), self.model, data, lmbdLagrange = 1., beta = self.model.lmbd_transformed, mu = self.model.mu_transformed).view(-1), flatten_output)
-            flatten_output.register_hook(lambda grad: torch.linalg.solve(jacobian_flatten_output.transpose(), grad))
-
+                output = CRR_NN_Solver_Training(noisy_data, self.model, lmbd = self.model.lmbd_transformed, mu = self.model.mu_transformed, max_iter = 200, batch = True)
+                flatten_output = []
+                for nsample in range(nbatches):
+                    flatten_output.append(output[nsample,...].view(-1))
+            print("images have been denoised")
+            Jacobians = []
+            samples = []
+            for nsample in range(nbatches):
+                flatten_outputSample = flatten_output[nsample]
+                flatten_outputSample = flatten_outputSample - H_fixedPoint(flatten_outputSample.view_as(output[nsample,...]), self.model, data[nsample,...], lmbdLagrange = 1., beta = self.model.lmbd_transformed, mu = self.model.mu_transformed).view(-1)
+                Jacobians.append(autograd.functional.jacobian(lambda x: H_fixedPoint(x.view_as(output[nsample,...]), self.model, data[nsample,...], lmbdLagrange = 1., beta = self.model.lmbd_transformed, mu = self.model.mu_transformed).view(-1), flatten_outputSample))
+                flatten_outputSample.register_hook(lambda grad, ns = nsample: torch.linalg.solve(Jacobians[ns].transpose(0,1), grad))
+                samples.append(flatten_outputSample.view_as(output[nsample,...]))
+                print(f"hook have been registered at {nsample}")
+            finalOutput = torch.stack(samples, 0)
             # data fidelity normalized
-            data_fidelity = (self.criterion(flatten_output.view_as(output), data))/(data.shape[0]) * 40 * 40 / data.shape[2] / data.shape[3]
+            data_fidelity = (self.criterion(finalOutput, data))/(data.shape[0]) * 40 * 40 / data.shape[2] / data.shape[3]
 
 
             # regularization of the splines to promote fewer breakpoints
@@ -185,7 +193,7 @@ class TrainerCRRNN:
             log['lipschitz'] = self.model.L.item()
             log['lmbd'] = (self.model.lmbd_transformed).item()
             log['mu'] = (self.model.mu_transformed).item()
-            if self.config['training_options']['tv2_lmbda'] > 0 and self.model.use_splines:
+            if self.config['training_options']['tv2_lambda'] > 0 and self.model.use_splines:
                 log['tv2'] = tv2.item()
 
             self.optimizer_step()
