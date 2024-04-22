@@ -164,7 +164,6 @@ class TrainerCRRNN:
                 flatten_output = []
                 for nsample in range(nbatches):
                     flatten_output.append(output[nsample,...].view(-1))
-            print("images have been denoised")
             Jacobians = []
             samples = []
             for nsample in range(nbatches):
@@ -190,7 +189,7 @@ class TrainerCRRNN:
             total_loss.backward()
 
             log['loss'] = data_fidelity
-            log['lipschitz'] = self.model.L.item()
+            # log['lipschitz'] = self.model.L.item()
             log['lmbd'] = (self.model.lmbd_transformed).item()
             log['mu'] = (self.model.mu_transformed).item()
             if self.config['training_options']['tv2_lambda'] > 0 and self.model.use_splines:
@@ -199,6 +198,9 @@ class TrainerCRRNN:
             self.optimizer_step()
             self.wrt_step = (epoch) * len(self.train_dataloader) + batch_idx
             self.write_scalars_tb(log)
+
+            if batch_idx % 10 == 0:
+                self.save_checkpoint(epoch, batch_idx)
 
             tbar.set_description('T ({}) | loss {:.4f} | LipBound {:.3f} | lmbd {:.3f} | mu {:.3f} | TV2 {:.3f}'.format(epoch, log['loss'], log['lipschitz'], log['lmbd'], log['mu'], self.model.TV2()))
 
@@ -223,7 +225,8 @@ class TrainerCRRNN:
             noisy_data = data + noise
 
             with torch.no_grad():
-                output = self.denoise(noisy_data, t_steps=self.config["training_options"]["t_steps"])
+                # output = self.denoise(noisy_data, t_steps=self.config["training_options"]["t_steps"])
+                output = CRR_NN_Solver_Training(noisy_data, self.model, lmbd = self.model.lmbd_transformed, mu = self.model.mu_transformed, max_iter = 200, batch = True)
 
                 loss = self.criterion(output, data)
                 out_val = torch.clamp(output, 0., 1.)
@@ -257,9 +260,10 @@ class TrainerCRRNN:
         for k, v in logs.items():
             self.writer.add_scalar(f'Convolutional/Training {k}', v, self.wrt_step)
 
-    def save_checkpoint(self, epoch):
+    def save_checkpoint(self, epoch, batch_idx = 9999999):
         state = {
             'epoch': epoch,
+            'batch_idx': batch_idx,
             'state_dict': self.model.state_dict(),
             'config': self.config,
             'u': self.model.u
@@ -268,5 +272,5 @@ class TrainerCRRNN:
             state['optimizer_' + str(i+1) + '_state_dict'] = self.optimizers[i].state_dict()
 
         print('Saving a checkpoint:')
-        filename = self.checkpoint_dir + '/checkpoint_' + str(epoch) + '.pth'
+        filename = self.checkpoint_dir + '/checkpoint_' + str(epoch) + str(batch_idx) +'.pth'
         torch.save(state, filename)
