@@ -31,7 +31,7 @@ def TV_Solver_Training(y, lmbd, batch, enforce_positivity):
     return z, P
 
 
-def CRR_NN_Solver_Training(y, model, lmbd = 1, mu = 1, max_iter = 200, batch = True):
+def CRR_NN_Solver_Training(y, model, lmbd = 1, mu = 1, max_iter = 200, batch = True, enforce_positivity = False):
     """"This solver uses the adaptive gradient descent scheme """
 
     def grad_func(x):
@@ -84,6 +84,9 @@ def CRR_NN_Solver_Training(y, model, lmbd = 1, mu = 1, max_iter = 200, batch = T
         Theta = beta / beta_old
 
         relNorm = torch.norm(x_old - x)/torch.norm(x_old)
+
+        if enforce_positivity:
+            x = torch.clamp(x, 0, None)
 
         if torch.max(relNorm).item() < tol:
             break
