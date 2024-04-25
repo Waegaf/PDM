@@ -31,7 +31,7 @@ def TV_Solver_Training(y, lmbd, batch, enforce_positivity):
     return z, P
 
 
-def CRR_NN_Solver_Training(y, model, lmbd = 1, mu = 1, max_iter = 200, batch = True, enforce_positivity = False):
+def CRR_NN_Solver_Training(y, model, lmbd = 1, mu = 1, max_iter = 300, batch = True, enforce_positivity = False):
     """"This solver uses the adaptive gradient descent scheme """
 
     def grad_func(x):
@@ -39,7 +39,7 @@ def CRR_NN_Solver_Training(y, model, lmbd = 1, mu = 1, max_iter = 200, batch = T
     
     # Initialization
     nbatches = y.shape[0]
-    tol = 1e-6
+    tol = 1e-3
     alpha = torch.full((nbatches, 1),1e-5)
     beta = torch.full((nbatches, 1), 1e-5)
     x_old = torch.zeros_like(y)
@@ -53,14 +53,20 @@ def CRR_NN_Solver_Training(y, model, lmbd = 1, mu = 1, max_iter = 200, batch = T
 
     x = x_old - prod(alpha, grad)
     z = torch.clone(x)
-    theta = torch.full((nbatches, 1) ,float('inf'))
+    theta = torch.full((nbatches,1),float('inf'))
     Theta = torch.full((nbatches, 1), float('inf'))
 
     for t in range(max_iter):
         grad_old = torch.clone(grad)
+        if torch.any(x.isnan()).item():
+            print(torch.mean(grad_norm))
+            print(x)
         grad = grad_func(x)
 
-        alpha_1 = (torch.norm(x-x_old, dim = (2,3))/torch.norm(grad - grad_old, dim = (2,3)))
+        normx = torch.norm(x-x_old, dim = (2,3))
+        normgrad = torch.norm(grad - grad_old, dim = (2,3))
+        diff = normx-normgrad
+        alpha_1 = 0.5*(torch.clamp(torch.norm(x-x_old, dim = (2,3)), 1e-7, None))/torch.clamp(torch.norm(grad - grad_old, dim = (2,3)), 1e-7, None)
         alpha_2 = torch.sqrt(1 + theta/2) * alpha
 
         alpha_old = alpha
@@ -80,16 +86,23 @@ def CRR_NN_Solver_Training(y, model, lmbd = 1, mu = 1, max_iter = 200, batch = T
 
         x = z + prod(gamma ,(z- z_old))
 
+        
+
         theta = alpha / alpha_old
         Theta = beta / beta_old
 
-        relNorm = torch.norm(x_old - x)/torch.norm(x_old)
 
         if enforce_positivity:
             x = torch.clamp(x, 0, None)
 
-        if torch.max(relNorm).item() < tol:
+        grad_norm = torch.norm(grad, dim = (2,3))
+        if torch.mean(grad_norm).item() < tol:
+            print("tol reached")
             break
+        
+    
+
+    print(torch.any(x.isnan()))
     return x
 
 

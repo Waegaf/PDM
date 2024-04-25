@@ -160,7 +160,7 @@ class TrainerCRRNN:
             ### IMPLICIT LAYER ###
             nbatches = data.shape[0]
             with torch.no_grad():
-                output = CRR_NN_Solver_Training(noisy_data, self.model, lmbd = self.model.lmbd_transformed, mu = self.model.mu_transformed, max_iter = 200, batch = True)
+                output = CRR_NN_Solver_Training(noisy_data, self.model, lmbd = self.model.lmbd_transformed, mu = self.model.mu_transformed, max_iter = 200, batch = True, enforce_positivity = True)
                 flatten_output = []
                 for nsample in range(nbatches):
                     flatten_output.append(output[nsample,...].view(-1))
@@ -168,7 +168,7 @@ class TrainerCRRNN:
             samples = []
             for nsample in range(nbatches):
                 flatten_outputSample = flatten_output[nsample]
-                flatten_outputSample = flatten_outputSample - H_fixedPoint(flatten_outputSample.view_as(output[nsample,...]), self.model, data[nsample,...], lmbdLagrange = 1., beta = self.model.lmbd_transformed, mu = self.model.mu_transformed).view(-1)
+                flatten_outputSample = flatten_outputSample - H_fixedPoint(flatten_outputSample.view_as(output[nsample,...]), self.model, noisy_data[nsample,...], lmbdLagrange = 1., beta = self.model.lmbd_transformed, mu = self.model.mu_transformed).view(-1)
                 Jacobians.append(autograd.functional.jacobian(lambda x: H_fixedPoint(x.view_as(output[nsample,...]), self.model, data[nsample,...], lmbdLagrange = 1., beta = self.model.lmbd_transformed, mu = self.model.mu_transformed).view(-1), flatten_outputSample))
                 flatten_outputSample.register_hook(lambda grad, ns = nsample: torch.linalg.solve(Jacobians[ns].transpose(0,1), grad))
                 samples.append(flatten_outputSample.view_as(output[nsample,...]))
@@ -202,7 +202,7 @@ class TrainerCRRNN:
             if batch_idx % 10 == 0:
                 self.save_checkpoint(epoch, batch_idx)
 
-            tbar.set_description('T ({}) | loss {:.4f} | LipBound {:.3f} | lmbd {:.3f} | mu {:.3f} | TV2 {:.3f}'.format(epoch, log['loss'], log['lipschitz'], log['lmbd'], log['mu'], self.model.TV2()))
+            tbar.set_description('T ({}) | loss {:.4f}  | lmbd {:.3f} | mu {:.3f} | TV2 {:.3f}'.format(epoch, log['loss'], log['lmbd'], log['mu'], self.model.TV2()))
 
     def optimizer_step(self):
         """ """
@@ -260,7 +260,7 @@ class TrainerCRRNN:
         for k, v in logs.items():
             self.writer.add_scalar(f'Convolutional/Training {k}', v, self.wrt_step)
 
-    def save_checkpoint(self, epoch, batch_idx = 9999999):
+    def save_checkpoint(self, epoch, batch_idx = 9):
         state = {
             'epoch': epoch,
             'batch_idx': batch_idx,
