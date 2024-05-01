@@ -63,6 +63,8 @@ class ConvexRidgeRegularizer(nn.Module):
         # running estimate of Lipschitz
         self.L = nn.parameter.Parameter(data=torch.tensor(1.), requires_grad=False)
 
+        self.W_Conv = None
+
         print("---------------------")
         print(f"Building a CRR-NN model with \n - {channels} channels \n splines parameters:")
         print(f"  ({self.activation})")
@@ -250,10 +252,75 @@ class ConvexRidgeRegularizer(nn.Module):
         # 5. Update number of parameters
         self.num_params = sum(p.numel() for p in self.parameters())
         print(f" Number of parameters after prunning: {self.num_params}")
+    
 
+    def get_derivative(self, x):
+        with torch.no_grad():
+            y = self.conv_layer(x)
+            grid = self.activation.grid.to(self.activation.coefficients_vect.device)
+            zero_knot_indexes = self.activation.zero_knot_indexes.to(grid.device)
+            coefficients_vect = self.activation.projected_coefficients_vect
+            size = self.activation.size
+            even = self.activation.even
+            max_range = (grid.item() * (size // 2 - 1))
+            if even:
+                y = y - grid / 2
+                max_range = (grid.item() * (size // 2 - 2))
+            y_clamped = y.clamp(min=-(grid.item() * (size // 2)), max=max_range)
+
+            floored_y = torch.floor(y_clamped / grid)  #left coefficient
+
+            # This gives the indexes (in coefficients_vect) of the left
+            # coefficients
+            indexes = (zero_knot_indexes.view(1, -1, 1, 1) + floored_y).long()
+
+            # Only two B-spline basis functions are required to compute the output
+            # (through linear interpolation) for each input in the B-spline range.
+            activation_output = (coefficients_vect[indexes + 1] - coefficients_vect[indexes]) / grid.item()
+            del coefficients_vect
+            del indexes
+            del floored_y
+            del y_clamped
+            torch.cuda.empty_cache()
+            return activation_output
+    
+    def set_W_Conv(self, n_heigth, n_width):
+        dim = n_heigth*n_width
+        device=self.conv_layer.conv_layers[0].weight.device
+        output = torch.empty(dim, 1, n_heigth, n_width)
+        for i in range(dim):
+            a = torch.zeros(dim)
+            a[i] = 1.
+            output[i,:,:,:] = a.view(n_heigth, n_width)
+        self.W_Conv = self.conv_layer(output.to(device))
+        del output
+        torch.cuda.empty_cache() 
+
+    def Jacobian(self, x):
+        n_heigth = x.shape[1]
+        n_width = x.shape[2]
+        derivative_x = self.get_derivative(x)
+        if self.W_Conv is None:
+            self.set_W_Conv(n_heigth=n_heigth, n_width = n_width)
+        torch.cuda.empty_cache()
+        return self.conv_layer.transpose(kronecker_prod(self.W_Conv, derivative_x))
+
+
+
+
+
+
+        
 
 def norm(u):
     return(torch.sqrt(torch.sum(u**2)))
 
 def normalize(u):
     return(u/norm(u))
+
+def kronecker_prod(W, A):
+    dim = W.shape[0]
+    output = torch.empty_like(W)
+    for i in range(dim):
+        output[i,:,:,:] = W[i,:,:,:] * A
+    return output

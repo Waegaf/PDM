@@ -8,7 +8,7 @@
     "exp_name": "Sigma_25_Implicit_Layers",
     "logging_info": {
         "epochs_per_val": 1,
-        "log_dir": "/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/Infimal_conv/CRRNN/Training/Trained_models",
+        "log_dir": "/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/Infimal_conv/CRRNN/Training/Trained_models_01_05",
         "save_epoch": 1
     },
     "net_params": {
