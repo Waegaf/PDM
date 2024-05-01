@@ -3,6 +3,7 @@ import cv2
 import matplotlib.pyplot as plt
 import os
 import sys
+import json
 from matplotlib.gridspec import GridSpec
 # Add of the corresponding paths to be enable to use the wanted functions
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers")
@@ -19,10 +20,20 @@ torch.manual_seed(61)
 
 # Choice of the (CRRNN) model
 device = 'cpu'
-sigma_training = 25
+sigma_training = 5
 t = 10
 exp_name = f'Sigma_{sigma_training}_t_{t}'
-model = utils.load_model(exp_name, device)
+
+# Load of the model
+config_path = "C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/CRRNN/Training/Trained_models_Maryam/Sigma_25_Implicit_Layers/config.json"
+checkpoint_path = "C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/CRRNN/Training/Trained_models_Maryam/Sigma_25_Implicit_Layers/checkpoints/checkpoint_040.pth"
+config = json.load(open(config_path))
+model, _ = utils.build_model(config)
+checkpoint = torch.load(checkpoint_path, map_location={'cuda:0':device,'cuda:1':device,'cuda:2':device,'cuda:3':device})
+
+model.to(device)
+model.load_state_dict(checkpoint['state_dict'])
+model.eval()
 # We need the identity operator and its adjoint (also identity) since we need to specify them to solve the denoising task with the CRRNN
 H = lambda x: x
 Ht = lambda x: x
@@ -86,7 +97,7 @@ ax5.imshow(img_denoised.detach().cpu().squeeze(), cmap="gray", vmin=0, vmax=1)
 ax5.set_yticks([])
 ax5.set_xticks([])
 
-fileName = f"30040DenoisedLenna{lmbd:.0f}Sigma{sigma_training:.0f}tStep{t:.0f}.png"
+fileName = f"12040DenoisedLenna{lmbd:.0f}Sigma{sigma_training:.0f}tStep{t:.0f}.png"
 path = os.path.join("Infimal_Conv/CRRNN/ResultsCRRNN", fileName) 
 plt.savefig(path)
 

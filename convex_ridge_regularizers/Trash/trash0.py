@@ -1,43 +1,59 @@
 import numpy as np
-import argparse
-import json
 import torch
-import torch.autograd as autograd
-from PIL import Image
-import math
 import cv2
-import torch.nn as nn
-from functools import partial
-import pylops_gpu
-from torchmetrics.functional import structural_similarity_index_measure as ssim
-import math
-
+import matplotlib.pyplot as plt
+import os
 import sys
-sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/utilsInfimalConvolution")
-from utilsTv import MoreauProximator
+from matplotlib.gridspec import GridSpec
+# Add of the corresponding paths to be enable to use the wanted functions
+sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers")
+sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/inverse_problems/utils_inverse_problems")
+from models import utils
+from reconstruction_map_crr import AdaGD_Recon, AdaAGD_Recon
 
-device = "cpu"
+# Creation of a folder to save the results
+if not os.path.exists("Infimal_Conv/CRRNN/ResultsCRRNN"):
+    os.makedirs("Infimal_Conv/CRRNN/ResultsCRRNN")
 
-imgLenna = cv2.resize(cv2.imread("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/Images/Lenna.png", cv2.IMREAD_GRAYSCALE), (100, 100))
-imgLenna_torch = torch.tensor(imgLenna, device = device).reshape((1,1) + imgLenna.shape)/255
-imgLenna_torchNoisy = imgLenna_torch + 25/255 * torch.randn_like(imgLenna_torch)
+# Set seed for the noise added
+torch.manual_seed(61)
 
-imgMountain = cv2.resize(cv2.imread("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/Images/Mountain.jpg", cv2.IMREAD_GRAYSCALE),(100,100))
-imgMountain_torch = torch.tensor(imgMountain, device = device).reshape((1,1)+ imgMountain.shape)/255
-imgMountain_torchNoisy = imgMountain_torch + 25/255 * torch.randn_like(imgMountain_torch)
-
-batchImg = torch.empty(2,1,100,100)
-batchImg[0,...] = imgLenna_torchNoisy
-batchImg[1,...] = imgMountain_torchNoisy
+def kronecker_prod(W, A):
+    p = W.shape[0]
+    output = torch.empty_like(W)
+    for i in range(p):
+        output[i,:,:,:] = W[i,:,:,:] * A
+    return output
 
 
-lmbd = 5e-2
-bounds = [None, None]
-device = "cpu"
-batch = True
-Prox = MoreauProximator([100,100],lmbd, bounds = bounds, device = device, batch = batch)
 
-res = Prox.batch_applyProx(batchImg, alpha = 1.0)
+# Choice of the (CRRNN) model
+device = 'cpu'
+sigma_training = 25
+t = 10
+exp_name = f'Sigma_{sigma_training}_t_{t}'
+model = utils.load_model(exp_name, device)
+# img = torch.randn(1,1,40,40)
 
-print(ssim(imgLenna_torch, res[0,...].unsqueeze(0), data_range=1.))
+# diff = model.get_derivative(img)
+# print(diff.shape)
+
+
+
+
+
+conv = model.conv_layer
+
+unit = torch.empty((1600,1,40,40))
+for i in range(1600):
+    a = torch.zeros(1600)
+    a[i] = 1.
+    unit[i,:,:,:] = a.view(40,40)
+
+
+result = conv(unit)
+
+print(result.shape)
+
+
 

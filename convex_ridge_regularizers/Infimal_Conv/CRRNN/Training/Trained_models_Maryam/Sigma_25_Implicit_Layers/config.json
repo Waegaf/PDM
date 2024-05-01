@@ -8,7 +8,7 @@
     "exp_name": "Sigma_25_Implicit_Layers",
     "logging_info": {
         "epochs_per_val": 1,
-        "log_dir": "C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/CRRNN/Training/Trained_models",
+        "log_dir": "/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/Infimal_conv/CRRNN/Training/Trained_models",
         "save_epoch": 1
     },
     "net_params": {
@@ -31,7 +31,7 @@
         "batch_size": 128,
         "num_workers": 1,
         "shuffle": true,
-        "train_data_file": "C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/preprocessed/new/BSD/train.h5"
+        "train_data_file": "/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/preprocessed/new/BSD/train.h5"
     },
     "training_options": {
         "epochs": 10,
@@ -47,6 +47,6 @@
         "batch_size": 1,
         "num_workers": 1,
         "shuffle": false,
-        "val_data_file": "C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/preprocessed/new/BSD/validation.h5"
+        "val_data_file": "/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/preprocessed/new/BSD/validation.h5"
     }
 }

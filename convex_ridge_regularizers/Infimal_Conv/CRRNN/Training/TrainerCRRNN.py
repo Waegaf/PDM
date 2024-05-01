@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import DataLoader
 import sys
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/training")
+# sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/training")
 from data import dataset
 import os
 import json
@@ -11,11 +12,13 @@ from torchmetrics import StructuralSimilarityIndexMeasure
 from torchmetrics.functional import peak_signal_noise_ratio as psnr
 import torch.autograd as autograd
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers")
+# sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers")
 from models.utils import build_model
 
 ssim = StructuralSimilarityIndexMeasure()
 
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/utilsInfimalConvolution")
+# sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/Infimal_conv/utilsInfimalConvolution")
 from utilsInfConvTraining import CRR_NN_Solver_Training, H_fixedPoint
 
 
@@ -160,7 +163,7 @@ class TrainerCRRNN:
             ### IMPLICIT LAYER ###
             nbatches = data.shape[0]
             with torch.no_grad():
-                output = CRR_NN_Solver_Training(noisy_data, self.model, lmbd = self.model.lmbd_transformed, mu = self.model.mu_transformed, max_iter = 200, batch = True, enforce_positivity = True)
+                output = CRR_NN_Solver_Training(noisy_data, self.model, lmbd = self.model.lmbd_transformed, mu = self.model.mu_transformed, max_iter = 200, batch = True, enforce_positivity = True, device = self.device)
                 flatten_output = []
                 for nsample in range(nbatches):
                     flatten_output.append(output[nsample,...].view(-1))
@@ -169,10 +172,11 @@ class TrainerCRRNN:
             for nsample in range(nbatches):
                 flatten_outputSample = flatten_output[nsample]
                 flatten_outputSample = flatten_outputSample - H_fixedPoint(flatten_outputSample.view_as(output[nsample,...]), self.model, noisy_data[nsample,...], lmbdLagrange = 1., beta = self.model.lmbd_transformed, mu = self.model.mu_transformed).view(-1)
-                Jacobians.append(autograd.functional.jacobian(lambda x: H_fixedPoint(x.view_as(output[nsample,...]), self.model, data[nsample,...], lmbdLagrange = 1., beta = self.model.lmbd_transformed, mu = self.model.mu_transformed).view(-1), flatten_outputSample))
+                Jacobian = autograd.functional.jacobian(lambda x: H_fixedPoint(x.view_as(output[nsample,...]), self.model, data[nsample,...], lmbdLagrange = 1., beta = self.model.lmbd_transformed, mu = self.model.mu_transformed).view(-1), flatten_outputSample)
+                # Jacobians.append(Jacobian.to(self.device))
+                print(f"Jacobian computed at {nsample}")
                 flatten_outputSample.register_hook(lambda grad, ns = nsample: torch.linalg.solve(Jacobians[ns].transpose(0,1), grad))
                 samples.append(flatten_outputSample.view_as(output[nsample,...]))
-                print(f"hook have been registered at {nsample}")
             finalOutput = torch.stack(samples, 0)
             # data fidelity normalized
             data_fidelity = (self.criterion(finalOutput, data))/(data.shape[0]) * 40 * 40 / data.shape[2] / data.shape[3]

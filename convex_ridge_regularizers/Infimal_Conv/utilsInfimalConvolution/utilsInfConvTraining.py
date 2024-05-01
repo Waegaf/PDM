@@ -3,7 +3,7 @@ import sys
 import os
 import math
 from tqdm import tqdm
-import torch.autograd as autograd
+# import torch.autograd as autograd
 from torchmetrics.functional import peak_signal_noise_ratio as psnr
 from torchmetrics.functional import structural_similarity_index_measure as ssim
 if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
@@ -11,7 +11,7 @@ if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/inverse_problems/utils_inverse_problems")
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/utilsInfimalConvolution")
 from utilsTv import TV_reconstruction, Tv_denoising_reconstruction, MoreauProximator
-from reconstruction_map_crr import AdaGD_Recon, AdaAGD_Recon
+# from reconstruction_map_crr import AdaGD_Recon, AdaAGD_Recon
 
 
 
@@ -31,7 +31,7 @@ def TV_Solver_Training(y, lmbd, batch, enforce_positivity):
     return z, P
 
 
-def CRR_NN_Solver_Training(y, model, lmbd = 1, mu = 1, max_iter = 300, batch = True, enforce_positivity = False):
+def CRR_NN_Solver_Training(y, model, lmbd = 1, mu = 1, max_iter = 300, batch = True, enforce_positivity = False, device ="cpu"):
     """"This solver uses the adaptive gradient descent scheme """
 
     def grad_func(x):
@@ -40,21 +40,21 @@ def CRR_NN_Solver_Training(y, model, lmbd = 1, mu = 1, max_iter = 300, batch = T
     # Initialization
     nbatches = y.shape[0]
     tol = 1e-3
-    alpha = torch.full((nbatches, 1),1e-5)
-    beta = torch.full((nbatches, 1), 1e-5)
-    x_old = torch.zeros_like(y)
+    alpha = torch.full((nbatches, 1),1e-5, device = device)
+    beta = torch.full((nbatches, 1), 1e-5, device = device)
+    x_old = torch.zeros_like(y, device = device)
     grad = grad_func(x_old)
 
     def prod(a, x):
-        out = torch.empty_like(x)
+        out = torch.empty_like(x, device= device)
         for i in range(nbatches):
             out[i,...] = a[i].item() * x[i,...]
         return out
 
     x = x_old - prod(alpha, grad)
     z = torch.clone(x)
-    theta = torch.full((nbatches,1),float('inf'))
-    Theta = torch.full((nbatches, 1), float('inf'))
+    theta = torch.full((nbatches,1),float('inf'), device = device)
+    Theta = torch.full((nbatches, 1), float('inf'), device = device)
 
     for t in range(max_iter):
         grad_old = torch.clone(grad)
@@ -100,9 +100,6 @@ def CRR_NN_Solver_Training(y, model, lmbd = 1, mu = 1, max_iter = 300, batch = T
             print("tol reached")
             break
         
-    
-
-    print(torch.any(x.isnan()))
     return x
 
 

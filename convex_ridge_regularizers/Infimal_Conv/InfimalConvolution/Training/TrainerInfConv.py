@@ -143,7 +143,6 @@ class TrainerInfConv:
         log = {}
 
         for batch_idx, data in enumerate(tbar):
-            print("SIIIIIIIZE", data.shape)
             data = data.to(self.device)
             noise = self.sigma/255 * torch.randn(data.shape, device = data.device)
             noisy_data = data + noise
@@ -152,8 +151,10 @@ class TrainerInfConv:
                 self.optimizers[i].zero_grad()
 
             # t-step denoiser
-            output = self.denoise(self.model, noisy_data, t_steps = self.config["training_options"]["t_steps"], alpha = self.alpha)
-
+            t_steps=self.config["training_options"]["t_steps"]
+            for t in range(t_steps):
+                output = self.denoise(self.model, noisy_data, t_steps = self.config["training_options"]["t_steps"], alpha = self.alpha)
+                pass
             # data fidelity normalizedd
             data_fidelity = (self.criterion(output, data)) / (data.shape[0]) * 40 * 30 / data.shape[2] / data.shape[3]
 
