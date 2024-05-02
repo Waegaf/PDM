@@ -134,7 +134,7 @@ class MoreauProximator:
 
         # Parameters related to the FGP algorithm
         self.gamma = 1.0/8
-        self.num_iter = 100
+        self.num_iter = 1000
 
     
     # Implementation of the FGP algorithm (Beck and Teboulle, 2008)

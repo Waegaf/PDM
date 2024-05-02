@@ -10,7 +10,7 @@ if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/inverse_problems/utils_inverse_problems")
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/utilsInfimalConvolution")
-from utilsTv import TV_reconstruction, Tv_denoising_reconstruction, MoreauProximator
+from utilsTv import TV_reconstruction, Tv_denoising_reconstruction, MoreauProximator, LinearOperator, LinearOperatorBatch
 # from reconstruction_map_crr import AdaGD_Recon, AdaAGD_Recon
 
 
@@ -86,8 +86,6 @@ def CRR_NN_Solver_Training(y, model, lmbd = 1, mu = 1, max_iter = 300, batch = T
 
         x = z + prod(gamma ,(z- z_old))
 
-        
-
         theta = alpha / alpha_old
         Theta = beta / beta_old
 
@@ -111,23 +109,60 @@ def matricize(M, z, P):
     pNew = M[z.numel():].view_as(P)
     return zNew, pNew
 
-def K_fixedPoint(z, P, data, lmbdLagrange, alpha, tau = 1e-2):
+def K_fixedPoint(z, P, data, lmbd, tau = 1e-2, batch = True, device = "cpu"):
     
+    sizein = [z.shape[2], z.shape[3]]
+    if batch:
+        LinearOp = LinearOperatorBatch(sizein=sizein, device= device)
+        gradZ = LinearOp.batch_applyL_t(z)
+        minusDivP = LinearOp.batch_applyL(P)
+    else:
+        LinearOp = LinearOperator(sizein= sizein, device = device)
+        gradZ = LinearOp.applyL_t(z)
+        minusDivP = LinearOp.applyL(P)
+
+    sigma = 1/tau
     def I_dF_1(P_like):
         n = P_like.size(dim = 1)
         m = P_like.size(dim = 2)
-        denom = torch.clamp(torch.sqrt(torch.sum(torch.pow(P_like, 2), dim=0)), min=1.0)
-        P_tilde = P_like/denom.expand(2, n, m)
+        if batch:
+            denom = torch.clamp(torch.sqrt(torch.sum(torch.pow(P_like, 2), dim=1)), min=1.0).unsqueeze(1)
+            P_tilde = P_like/denom.expand(-1, 2, -1, -1)
+        else:
+            denom = torch.clamp(torch.sqrt(torch.sum(torch.pow(P_like, 2), dim=0)), min=1.0)
+            P_tilde = P_like/denom.expand(2, n, m)
         return P_tilde
     
     def I_dG_1(z_like):
-        z_tilde = (z_like + (tau*lmbdLagrange/alpha)*data)/(1 + (tau*lmbdLagrange/alpha))
+        z_tilde = (z_like + (tau*lmbd)*data)/(1 + (tau*lmbd))
         return z_tilde
 
-    K_1 = I_dF_1(P)-P
-    K_2 = I_dG_1(z)-z
+    fixedP = I_dF_1(P+sigma*gradZ)-P
+    fixedZ = I_dG_1(z+tau*minusDivP)-z
 
-    return vectorize(K_1, K_2)
+    return fixedZ, fixedP
+
+def fixedPointP(P, g, lmbd, tau, batch = False, device = "cpu"):
+    sigma = 1/tau
+    if batch:
+        sizein = [P.shape[2], P.shape[3]]
+        LinearOp = LinearOperatorBatch(sizein=sizein, device= device)
+        minusDivP = LinearOp.batch_applyL(P)
+        interRes0 = LinearOp.batch_applyL_t(g-lmbd*minusDivP)
+        interRes2 = P+sigma*interRes0
+        norm = torch.clamp(torch.sqrt(torch.sum(torch.pow(interRes2, 2), dim=1)), min=1.0).unsqueeze(1)
+        interRes3 = interRes2/norm.expand(-1, 2, -1, -1)
+        return interRes3-P 
+    else:
+        sizein = [P.shape[1], P.shape[2]]
+        LinearOp = LinearOperator(sizein= sizein, device = device)
+        minusDivP = LinearOp.applyL(P)
+        interRes0 = LinearOp.applyL_t(g-lmbd*minusDivP)
+        interRes2 = P+sigma*interRes0
+        norm = torch.clamp(torch.sqrt(torch.sum(torch.pow(interRes2, 2), dim=0)), min=1.0)
+        interRes3 = interRes2/norm.expand(2, sizein[0], sizein[1])
+        return interRes3-P 
+    
 
 
 def H_fixedPoint(x, model, data, lmbdLagrange, beta, mu):
@@ -196,3 +231,43 @@ def tstepInfConvDenoiser(model, x_noisy, t_steps, alpha,  **kwargs):
         Theta2 = Theta2 + u - g
     
     return u
+
+
+def JacobianProjUnitBall(P):
+    dim = P.shape[1]*P.shape[2]
+    norm = torch.sum(torch.pow(P, 2), dim=0)
+    normFlatten = norm.view(-1)
+    derivative_ii = torch.cat((P[1,...].view(-1)*P[1,...].view(-1), P[0,...].view(-1)*P[0,...].view(-1)), 0)/torch.pow(norm, 3)
+    is_norm_larger_than_1 = normFlatten > 1.
+    is_norm_larger_than_1_2 = torch.cat((is_norm_larger_than_1, is_norm_larger_than_1), 0)[None,:]
+
+    
+    
+
+    IndicesUP = -(torch.arange(dim)[:, None] +1.0) + ((torch.arange(2*dim)[None, :] +1.0))
+    backgroundUp = torch.where(IndicesUP == dim or IndicesUP == 0, torch.tensor(1.0), torch.tensor(0.0))
+    
+    background = torch.cat((backgroundUp, backgroundUp), 0)
+
+    indices = 1. + torch.arange(2*dim)[:, None] * torch.ones_like(background), 1. + torch.ones_like(background) * torch.arange(2*dim)[None, :]
+
+    productA = background * is_norm_larger_than_1_2
+
+    def derivative(i,j):
+        if i==j:
+            if i > dim:
+                k = 0
+            else:
+                k = 1    
+            return P[k,i%dim, i%dim]/torch.pow(normFlatten[i%dim], 3/2)
+        
+        else:
+            return -P[1,i%dim,j%dim]*P[0,i%dim,j%dim]/torch.pow(normFlatten[i%dim], 3/2)
+
+    productB = torch.where(productA, derivative(*indices), torch.tensor([0]) )
+    return background + (productA*productB)
+
+def JacobianDivergence(P):
+    dim = P.shape[1]*P.shape[2]
+    torch.zeros(dim, 2*dim)
+    
