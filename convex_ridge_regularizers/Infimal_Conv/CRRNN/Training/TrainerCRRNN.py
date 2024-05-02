@@ -35,7 +35,6 @@ class TrainerCRRNN:
         self.device = device
         self.sigma = config['sigma']
 
-
         # datasets and dataloaders
         # datasets and dataloaders
         train_dataset = dataset.H5PY(config['train_dataloader']['train_data_file'])
@@ -172,22 +171,18 @@ class TrainerCRRNN:
             Jacobians = []
             samples = []
             Id =torch.eye(1600, device=self.device)
+            # Computation of the jacobian matrix of the implicit function for each sample of the batch
             for nsample in range(nbatches):
                 flatten_outputSample = flatten_output[nsample]
                 flatten_outputSample = flatten_outputSample - H_fixedPoint(flatten_outputSample.view_as(output1), self.model, noisy_data[nsample,...], lmbdLagrange = 1., beta = self.model.lmbd_transformed, mu = self.model.mu_transformed).view(-1)
-                # Jacobian = autograd.functional.jacobian(lambda x: H_fixedPoint(x.view_as(output[nsample,...]), self.model, noisy_data[nsample,...], lmbdLagrange = 1., beta = self.model.lmbd_transformed, mu = self.model.mu_transformed).view(-1), flatten_outputSample)
                 with torch.no_grad():
-                    JacobianManual = self.model.mu_transformed*self.model.lmbd_transformed*self.model.Jacobian(self.model.mu_transformed*flatten_outputSample.view_as(output1)).reshape(1600,1600)+Id
+                    JacobianManual = self.model.mu_transformed*self.model.lmbd_transformed*self.model.Hessian(self.model.mu_transformed*flatten_outputSample.view_as(output1)).reshape(1600,1600)+Id
                 Jacobians.append(JacobianManual)
-                # if nsample > 20:
-                #     print(torch.cuda.memory_summary())
-                print(f"Jacobian computed at {nsample}")
                 flatten_outputSample.register_hook(lambda grad, ns = nsample: torch.linalg.solve(Jacobians[ns].transpose(0,1), grad))
                 samples.append(flatten_outputSample.view_as(output1))
             finalOutput = torch.stack(samples, 0)
             # data fidelity normalized
             data_fidelity = (self.criterion(finalOutput, data))/(data.shape[0]) * 40 * 40 / data.shape[2] / data.shape[3]
-
 
             # regularization of the splines to promote fewer breakpoints
             if self.config['training_options']['tv2_lambda'] > 0 and self.model.use_splines:
@@ -200,7 +195,6 @@ class TrainerCRRNN:
             total_loss.backward()
 
             log['loss'] = data_fidelity
-            # log['lipschitz'] = self.model.L.item()
             log['lmbd'] = (self.model.lmbd_transformed).item()
             log['mu'] = (self.model.mu_transformed).item()
             if self.config['training_options']['tv2_lambda'] > 0 and self.model.use_splines:
@@ -210,7 +204,7 @@ class TrainerCRRNN:
             self.wrt_step = (epoch) * len(self.train_dataloader) + batch_idx
             self.write_scalars_tb(log)
 
-            if batch_idx % 10 == 0:
+            if batch_idx % 100 == 0:
                 self.save_checkpoint(epoch, batch_idx)
 
             tbar.set_description('T ({}) | loss {:.4f}  | lmbd {:.3f} | mu {:.3f} | TV2 {:.3f}'.format(epoch, log['loss'], log['lmbd'], log['mu'], self.model.TV2()))
@@ -237,7 +231,7 @@ class TrainerCRRNN:
 
             with torch.no_grad():
                 # output = self.denoise(noisy_data, t_steps=self.config["training_options"]["t_steps"])
-                output = CRR_NN_Solver_Training(noisy_data, self.model, lmbd = self.model.lmbd_transformed, mu = self.model.mu_transformed, max_iter = 200, batch = True)
+                output = CRR_NN_Solver_Training(noisy_data, self.model, lmbd = self.model.lmbd_transformed, mu = self.model.mu_transformed, max_iter = 200, batch = True, enforce_positivity = True, device = self.device)
 
                 loss = self.criterion(output, data)
                 out_val = torch.clamp(output, 0., 1.)

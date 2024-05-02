@@ -2,17 +2,26 @@ import torch
 from torch.utils.data import DataLoader
 import os, sys
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/training")
+# sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/training")
 from data import dataset
 import json
 from torch.utils import tensorboard
 from tqdm import tqdm
 from torchmetrics import StructuralSimilarityIndexMeasure 
 from torchmetrics.functional import peak_signal_noise_ratio as psnr
+import torch.autograd as autograd
+
+
 
 ssim = StructuralSimilarityIndexMeasure()
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers")
+sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers")
 from models.utils import build_model
 from Infimal_Conv.utilsInfimalConvolution.utilsInfConvTraining import tstepInfConvDenoiser
+
+# sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/utilsInfimalConvolution")
+sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/Infimal_conv/utilsInfimalConvolution")
+from utilsInfConvTraining import CRR_NN_Solver_Training, H_fixedPoint
 
 
 class TrainerInfConv:
@@ -152,9 +161,20 @@ class TrainerInfConv:
 
             # t-step denoiser
             t_steps=self.config["training_options"]["t_steps"]
+            # Initialization steps
+
+            z = torch.zeros_like(noisy_data)
+            w = torch.zeros_like(noisy_data)
+            g = torch.zeros_like(noisy_data)
+            Theta1 = torch.zeros_like(noisy_data)
+            Theta2 = torch.zeros_like(noisy_data)
+
+            # Differentiable steps
+            lmbdLagrange = self.config["training_options"]["lambdaLagrange"]
             for t in range(t_steps):
-                output = self.denoise(self.model, noisy_data, t_steps = self.config["training_options"]["t_steps"], alpha = self.alpha)
-                pass
+                u = (1/2*lmbdLagrange+1)*(noisy_data + lmbdLagrange*(z+w+Theta1+g-Theta2))
+                with torch.no_grad():
+                    
             # data fidelity normalizedd
             data_fidelity = (self.criterion(output, data)) / (data.shape[0]) * 40 * 30 / data.shape[2] / data.shape[3]
 
@@ -171,7 +191,6 @@ class TrainerInfConv:
             total_loss.backward()
 
             log['loss'] = data_fidelity
-            log['lipschitz'] = self.model.L.item()
             log['lmbd'] = (self.model.lmbd_transformed).item()
             log['mu'] = (self.model.mu_transformed).item()
             if self.config['training_options']['tv2_lambda'] > 0 and self.model.use_splines:
@@ -181,7 +200,10 @@ class TrainerInfConv:
             self.wrt_step = (epoch) * len(self.train_dataloader) + batch_idx
             self.write_scalars_tb(log)
 
-            tbar.set_description('T ({}) | loss {:.4f} | LipBound {:.3f} | lmbd {:.3f} | mu {:.3f} | TV2 {:.3f}'.format(epoch, log['loss'], log['lipschitz'], log['lmbd'], log['mu'], self.model.TV2()))
+            if batch_idx % 100 == 0:
+                self.save_checkpoint(epoch, batch_idx)
+
+            tbar.set_description('T ({}) | loss {:.4f}  lmbd {:.3f} | mu {:.3f} | TV2 {:.3f}'.format(epoch, log['loss'],  log['lmbd'], log['mu'], self.model.TV2()))
 
     
     def optimizer_step(self):

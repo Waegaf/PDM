@@ -1,7 +1,7 @@
 {
     "activation_params": {
         "knots_range": 0.1,
-        "n_channels": 56,
+        "n_channels": 32,
         "n_knots": 21,
         "name": "spline"
     },
@@ -19,7 +19,7 @@
         ],
         "kernel_size": 7
     },
-    "number_of_parameters": 32930,
+    "number_of_parameters": 13610,
     "optimizer": {
         "lr_conv": 0.001,
         "lr_lmbd": 0.05,
