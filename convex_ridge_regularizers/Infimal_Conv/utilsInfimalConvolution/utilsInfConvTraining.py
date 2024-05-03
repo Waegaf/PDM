@@ -3,7 +3,7 @@ import sys
 import os
 import math
 from tqdm import tqdm
-# import torch.autograd as autograd
+import torch.autograd as autograd
 from torchmetrics.functional import peak_signal_noise_ratio as psnr
 from torchmetrics.functional import structural_similarity_index_measure as ssim
 if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
@@ -235,9 +235,9 @@ def tstepInfConvDenoiser(model, x_noisy, t_steps, alpha,  **kwargs):
 
 def JacobianProjUnitBall(P):
     dim = P.shape[1]*P.shape[2]
+    PFlatten = torch.cat((P[0,...].view(1,-1), P[1,...].view(1,-1)),0)
     norm = torch.sum(torch.pow(P, 2), dim=0)
     normFlatten = norm.view(-1)
-    derivative_ii = torch.cat((P[1,...].view(-1)*P[1,...].view(-1), P[0,...].view(-1)*P[0,...].view(-1)), 0)/torch.pow(norm, 3)
     is_norm_larger_than_1 = normFlatten > 1.
     is_norm_larger_than_1_2 = torch.cat((is_norm_larger_than_1, is_norm_larger_than_1), 0)[None,:]
 
@@ -245,29 +245,119 @@ def JacobianProjUnitBall(P):
     
 
     IndicesUP = -(torch.arange(dim)[:, None] +1.0) + ((torch.arange(2*dim)[None, :] +1.0))
-    backgroundUp = torch.where(IndicesUP == dim or IndicesUP == 0, torch.tensor(1.0), torch.tensor(0.0))
+    boolean = (IndicesUP == dim) | (IndicesUP == 0)
+    backgroundUp = torch.where(boolean, torch.tensor(1.0), torch.tensor(0.0))
     
     background = torch.cat((backgroundUp, backgroundUp), 0)
 
-    indices = 1. + torch.arange(2*dim)[:, None] * torch.ones_like(background), 1. + torch.ones_like(background) * torch.arange(2*dim)[None, :]
+    productA = (background * is_norm_larger_than_1_2) == 1
 
-    productA = background * is_norm_larger_than_1_2
-
-    def derivative(i,j):
-        if i==j:
-            if i > dim:
-                k = 0
-            else:
-                k = 1    
-            return P[k,i%dim, i%dim]/torch.pow(normFlatten[i%dim], 3/2)
+    def derivative_i_equal_j(i, k):  
+        norm =  torch.pow(normFlatten[i-(1-k)*dim], 3/2)
+        return PFlatten[k,i]/norm
         
-        else:
-            return -P[1,i%dim,j%dim]*P[0,i%dim,j%dim]/torch.pow(normFlatten[i%dim], 3/2)
+    def derivative_i_not_equal_j(i,k):
+        return -PFlatten[1,i]*PFlatten[0,i]/torch.pow(normFlatten[i-(1-k)*dim], 3/2)
 
-    productB = torch.where(productA, derivative(*indices), torch.tensor([0]) )
+    ID = torch.eye(2*dim)
+    IDMod = ID * torch.cat((torch.arange(dim)[:,None], torch.arange(dim)[:,None]), 0)
+    IDMod = IDMod.to(torch.int32)
+    K = ID * (torch.cat((torch.full((dim,1), 1), torch.full((dim,1), 0)), 0))
+    K = K.to(torch.int32)
+    newProdA = productA.long()*ID
+    newProdA = newProdA == 1
+    productB0 = torch.where(newProdA, derivative_i_equal_j(IDMod, K), torch.zeros_like(productA) )
+
+    for i in range(2*dim):
+        for j in range(2*dim):
+            if productB0[i,j].isnan().item():
+                print(f"({i}, {j})")
+                print(IDMod[i,j])
+
+    IDMod = (productA.long()*(torch.ones_like(ID)- ID))* torch.cat((torch.arange(dim)[:,None], torch.arange(dim)[:,None]), 0)
+    IDMod = IDMod.to(torch.int32)
+    prodB1_bool = (productA.long()-ID)==1
+    productB1 = torch.where(prodB1_bool, derivative_i_not_equal_j(IDMod,K), torch.zeros_like(productA) )
+    productB = productB0+productB1
+    productA = productA.long()
+    print(f"PRODUCTB0 HAS A NAN:{torch.isnan(productB0).any()}")
+    print(f"PRODUCTB1 HAS A NAN:{torch.isnan(productB1).any()}")
     return background + (productA*productB)
 
-def JacobianDivergence(P):
-    dim = P.shape[1]*P.shape[2]
-    torch.zeros(dim, 2*dim)
+def JacobianDivergence(n,m):
     
+    def derivateP_1(i,j):
+        leftMatrix = torch.zeros(n,m)
+        leftMatrix[i,j] = 1.0
+        if i+1 < n:
+            leftMatrix[i+1,j] = -1.
+        return leftMatrix.view(-1)
+    
+    def derivateP_2(i,j):
+        rigthMatrix = torch.zeros(n,m)
+        rigthMatrix[i,j] = 1.0
+        if j+1 < m:
+            rigthMatrix[i,j+1] = -1.0
+        return rigthMatrix.view(-1)
+
+    for i in range(n):
+        for j in range(m):
+            if i==0 and j==0:
+                rigthMatrix = derivateP_2(i,j)[None, :]
+                leftMatrix = derivateP_1(i,j)[None,:]
+            else:
+                rigthMatrix = torch.cat((rigthMatrix, derivateP_2(i,j)[None, :]), 0)
+                leftMatrix = torch.cat((leftMatrix, derivateP_1(i,j)[None, :]), 0)
+
+    
+    JacobianDiv = torch.cat((leftMatrix, rigthMatrix), 1)
+    return JacobianDiv
+
+def JacobianGrad(n,m):
+    
+    def derivateGrad_1(i,j):
+        rigthMatrix = torch.zeros(n,m)
+        if i < n-1:
+            rigthMatrix[i,j] = -1.0
+            rigthMatrix[i+1,j] = 1.0
+        return rigthMatrix.view(-1)
+    
+    def derivateGrad_2(i,j):
+        leftMatrix = torch.zeros(n,m)
+        if j < m-1:
+            leftMatrix[i,j] = -1.0
+            leftMatrix[i,j+1] = 1.0
+        return leftMatrix.view(-1)
+    
+    for i in range(n):
+        for j in range(m):
+            if i==0 and j==0:
+                rigthMatrix = derivateGrad_1(i,j)[None, :]
+                leftMatrix = derivateGrad_2(i,j)[None,:]
+            else:
+                rigthMatrix = torch.cat((rigthMatrix, derivateGrad_1(i,j)[None, :]), 0)
+                leftMatrix = torch.cat((leftMatrix, derivateGrad_2(i,j)[None, :]), 0)
+    
+
+    JacobianGrad = torch.cat((rigthMatrix, leftMatrix), 0)
+    return JacobianGrad
+
+def JacobianFixedPointP(P, img, sigma, lmbd, device):
+    n = P.shape[1]
+    m = P.shape[2]
+
+    LinearOp = LinearOperator([n,m], device = device)
+    divP = -LinearOp.applyL(P)
+
+    z = img + lmbd*divP
+    gradZ = LinearOp.applyL_t(z)
+    J0 = JacobianProjUnitBall(P+sigma*gradZ)
+    J1 = JacobianDivergence(n,m)
+    J2 = JacobianGrad(n,m)
+    Id = torch.eye(n*m*2)
+    if torch.isnan(J0).any():
+        print("STOOOOOOp")
+    B1 = Id + torch.matmul(J2,J1)
+    B0 = torch.matmul(J0, B1)
+    
+    return B0 - Id
