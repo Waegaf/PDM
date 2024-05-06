@@ -9,9 +9,6 @@ from torch.utils import tensorboard
 from tqdm import tqdm
 from torchmetrics import StructuralSimilarityIndexMeasure 
 from torchmetrics.functional import peak_signal_noise_ratio as psnr
-import torch.autograd as autograd
-
-
 
 ssim = StructuralSimilarityIndexMeasure()
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers")
@@ -21,7 +18,8 @@ from Infimal_Conv.utilsInfimalConvolution.utilsInfConvTraining import tstepInfCo
 
 # sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/utilsInfimalConvolution")
 sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/Infimal_conv/utilsInfimalConvolution")
-from utilsInfConvTraining import CRR_NN_Solver_Training, H_fixedPoint
+from utilsInfConvTraining import CRR_NN_Solver_Training, H_fixedPoint, TV_Solver_Training, fixedPointP, JacobianFixedPointP
+from utilsTV import MoreauProximator
 
 
 class TrainerInfConv:
@@ -151,10 +149,17 @@ class TrainerInfConv:
 
         log = {}
 
+        
+        lmbdLagrange = self.config["training_options"]["Lagrange"]
+        alpha = self.config["model"]["alpha"]
+        lambdaTV = lmbdLagrange/alpha
+        moreauProxBatch = MoreauProximator([40, 40], lambdaTV, [None, None], device = self.device, batch = True)
+        moreauProx = MoreauProximator([40,40], lambdaTV, [None, None], device = self.device, batch = False)
         for batch_idx, data in enumerate(tbar):
             data = data.to(self.device)
             noise = self.sigma/255 * torch.randn(data.shape, device = data.device)
             noisy_data = data + noise
+            nsamples = data.shape[0]
 
             for i in range(len(self.optimizers)):
                 self.optimizers[i].zero_grad()
@@ -170,13 +175,72 @@ class TrainerInfConv:
             Theta2 = torch.zeros_like(noisy_data)
 
             # Differentiable steps
-            lmbdLagrange = self.config["training_options"]["lambdaLagrange"]
+            JacobiansP_OuterLoop = []
+            JacobiansW_OuterLoop = []
+
             for t in range(t_steps):
+                # u - optimization
                 u = (1/2*lmbdLagrange+1)*(noisy_data + lmbdLagrange*(z+w+Theta1+g-Theta2))
+                # z - optimization
                 with torch.no_grad():
+                    P = moreauProxBatch.batch_applyProxPrimalDual(u - w - Theta1, alpha = 1.0)
+                    flattenOuputP = []
+                    for nsample in range(nsamples):
+                        flattenOuputP.append(P[nsample,...].view(-1))
+                Pref = P[nsample]
+                tau = 1/8.
+                JacobiansP = []
+                samplesZ = []
+                for nsample in range(nsamples):
+                    flattenSampleP = flattenOuputP[nsample]
+                    data = (u[nsample,...] - w[nsample,...] - Theta1[nsample,...]).unsqueeze(0)
                     
+                    flattenSampleP = flattenSampleP - fixedPointP(flattenSampleP.view_as(P[0,...]), g = data, lmbd= lambdaTV, tau = tau, batch = False, device = self.device)
+                    with torch.no_grad():
+                        JacobianP = JacobianFixedPointP( flattenOuputP.view_as(Pref), img = data, sigma = 1/tau , lmbd = lambdaTV, device = self.device)
+
+                    JacobiansP.append(JacobianP) 
+                    flattenSampleP.register_hook(lambda grad, ns = nsample, tstep =t: torch.linalg.solve(JacobiansP_OuterLoop[tstep][ns].transpose(0,1), grad))
+                    P = flattenSampleP.view_as(Pref)
+                    Z = data - lambdaTV*moreauProx.batchL.batch_applyL(P)
+                    samplesZ.append(Z)
+                
+                ZBatches = torch.stack(samplesZ, 0)
+
+                # w - optimization
+                with torch.no_grad():
+                    noisy_data = u - ZBatches - Theta1
+                    wOutput = CRR_NN_Solver_Training(noisy_data, self.model, lmbd = (1/lmbdLagrange) * self.model.lmbd_transformed, mu = self.model.mu_transformed, max_iter = 200, batch = True, enforce_positivity = True, device = self.device)
+                    flattenOutputW = []
+                    for nsample in range(nsamples):
+                        flattenOutputW.append(wOutput[nsample,...].view(-1))
+                wOutputRef = wOutput[nsample,...]
+                JacobiansW = []
+                samplesW = []
+                Id =torch.eye(1600, device=self.device)
+                # Computation of the jacobian matrix of the implicit function for each sample of the batch
+                for nsample in range(nsamples):
+                    flattenSampleW = flattenOutputW[nsample]
+                    flattenOutputW = flattenOutputW - H_fixedPoint(flattenSampleW.view_as(wOutputRef), self.model, noisy_data[nsample,...], lmbdLagrange, beta = self.model.lmbd_transformed, mu = self.model.mu_transformed).view(-1)
+                    with torch.no_grad():
+                        JacobianW = self.model.mu_transformed*self.model.lmbd_transformed*self.model.Hessian(self.model.mu_transformed*flattenOutputW.view_as(wOutputRef)).reshape(1600,1600)+Id
+                    JacobiansW.append(JacobianW)
+                    flattenSampleW.register_hook(lambda grad, ns = nsample, tstep = t: torch.linalg.solve(JacobiansW_OuterLoop[tstep][ns].transpose(0,1), grad))
+                    samplesW.append(flattenSampleW.view_as(wOutputRef))
+                WBatches = torch.stack(samplesW, 0)
+
+                # g - optimization
+                g = torch.clip(u + Theta2, 0)
+
+                # Theta1 - optimization
+                Theta1 = Theta1 -u + ZBatches + WBatches
+                
+                # Theta2 - optimization
+                Theta2 = Theta2 + u - g
+            JacobiansP_OuterLoop.append(JacobiansP)
+            JacobiansW_OuterLoop.append(JacobiansW)    
             # data fidelity normalizedd
-            data_fidelity = (self.criterion(output, data)) / (data.shape[0]) * 40 * 30 / data.shape[2] / data.shape[3]
+            data_fidelity = (self.criterion(u, data)) / (data.shape[0]) * 40 * 30 / data.shape[2] / data.shape[3]
 
             # Regularization
 

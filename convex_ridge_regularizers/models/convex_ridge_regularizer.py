@@ -255,6 +255,10 @@ class ConvexRidgeRegularizer(nn.Module):
     
 
     def get_derivative(self, x):
+        """
+        It computes pointwisely the evaluation of the second derivative of the quadratic splie (i.e. the first derivative of the linear spline) accordind to the channel of 
+        the input.
+        """
         with torch.no_grad():
             y = self.conv_layer(x)
             grid = self.activation.grid.to(self.activation.coefficients_vect.device)
@@ -277,6 +281,7 @@ class ConvexRidgeRegularizer(nn.Module):
             # Only two B-spline basis functions are required to compute the output
             # (through linear interpolation) for each input in the B-spline range.
             activation_output = (coefficients_vect[indexes + 1] - coefficients_vect[indexes]) / grid.item()
+            # It avoid to store some unuseful variables on the restricted memory of the gpu
             del coefficients_vect
             del indexes
             del floored_y
@@ -285,6 +290,10 @@ class ConvexRidgeRegularizer(nn.Module):
             return activation_output
     
     def set_W_Conv(self, n_heigth, n_width):
+        """
+        It sets the matrix W (when the image is vectorized, we can see the convolutional neural
+        network as matrix-vector product) to the attribute of the model
+        """
         dim = n_heigth*n_width
         device=self.conv_layer.conv_layers[0].weight.device
         output = torch.empty(dim, 1, n_heigth, n_width)
@@ -296,7 +305,10 @@ class ConvexRidgeRegularizer(nn.Module):
         del output
         torch.cuda.empty_cache() 
 
-    def Jacobian(self, x):
+    def Hessian(self, x):
+        """
+        It computes the Hessian of the model evaluated at x
+        """
         n_heigth = x.shape[1]
         n_width = x.shape[2]
         derivative_x = self.get_derivative(x)

@@ -28,7 +28,7 @@ def TV_Solver_Training(y, lmbd, batch, enforce_positivity):
         z, P = moreauProx.applyProxPrimalDual(y, alpha = 1.0)
     else:
         z, P = moreauProx.batch_applyProxPrimalDual(y, alpha = 1.0)
-    return z, P
+    return  P
 
 
 def CRR_NN_Solver_Training(y, model, lmbd = 1, mu = 1, max_iter = 300, batch = True, enforce_positivity = False, device ="cpu"):
@@ -234,24 +234,31 @@ def tstepInfConvDenoiser(model, x_noisy, t_steps, alpha,  **kwargs):
 
 
 def JacobianProjUnitBall(P):
+    """
+    Input: P of size (2,n,m)
+    Output: the Jacobian of the Projection over the unit ball evaluated at P
+    """
     dim = P.shape[1]*P.shape[2]
+    # PFlattend is of size (2, n*m, n*m)
     PFlatten = torch.cat((P[0,...].view(1,-1), P[1,...].view(1,-1)),0)
+
     norm = torch.sum(torch.pow(P, 2), dim=0)
+    # normFlatten is size (n*m)
     normFlatten = norm.view(-1)
     is_norm_larger_than_1 = normFlatten > 1.
+    # is_norm_larger_than_1_2 is of size(1,2*n*m)
     is_norm_larger_than_1_2 = torch.cat((is_norm_larger_than_1, is_norm_larger_than_1), 0)[None,:]
 
-    
-    
-
-    IndicesUP = -(torch.arange(dim)[:, None] +1.0) + ((torch.arange(2*dim)[None, :] +1.0))
+    # Constrution of the tensor background which is 1 if i=j (mod nm) (i.e. if i and j are related)
+    IndicesUP = -(torch.arange(dim)[:, None] ) + ((torch.arange(2*dim)[None, :] ))
     boolean = (IndicesUP == dim) | (IndicesUP == 0)
     backgroundUp = torch.where(boolean, torch.tensor(1.0), torch.tensor(0.0))
-    
     background = torch.cat((backgroundUp, backgroundUp), 0)
 
+    # If the norm is not larger than one, we do not need to compute the derivative
     productA = (background * is_norm_larger_than_1_2) == 1
 
+    # Declaration of the derivative functions
     def derivative_i_equal_j(i, k):  
         norm =  torch.pow(normFlatten[i-(1-k)*dim], 3/2)
         return PFlatten[k,i]/norm
@@ -260,29 +267,31 @@ def JacobianProjUnitBall(P):
         return -PFlatten[1,i]*PFlatten[0,i]/torch.pow(normFlatten[i-(1-k)*dim], 3/2)
 
     ID = torch.eye(2*dim)
+    # IDMod contains the value i on its diagonal, and it helps us to find the i corresponding to FlattenP[i]
     IDMod = ID * torch.cat((torch.arange(dim)[:,None], torch.arange(dim)[:,None]), 0)
     IDMod = IDMod.to(torch.int32)
+    # K contains the value k-1 where k=1,2 on its diagonal to help us to compute the corresponding derivative when i diff from j
     K = ID * (torch.cat((torch.full((dim,1), 1), torch.full((dim,1), 0)), 0))
     K = K.to(torch.int32)
-    newProdA = productA.long()*ID
-    newProdA = newProdA == 1
-    productB0 = torch.where(newProdA, derivative_i_equal_j(IDMod, K), torch.zeros_like(productA) )
+    # Derivative_ii_bool corresponds to the entry where we need to compute the derivative when i equals j
+    Derivative_ii_bool = productA.long()*ID
+    Derivative_ii_bool = Derivative_ii_bool == 1
+    # Derivative_ii corresponds to the entry where one has computed the derivative if i equals j, ow it is equal to 0
+    Derivative_ii = torch.where(Derivative_ii_bool, derivative_i_equal_j(IDMod, K), torch.zeros_like(productA) )
 
-    for i in range(2*dim):
-        for j in range(2*dim):
-            if productB0[i,j].isnan().item():
-                print(f"({i}, {j})")
-                print(IDMod[i,j])
-
+    # IDMod corresponds to the entry where we need to compute the derivative when i is different of j and the value of this entry to the value
+    # of 0<= i <= n*m
     IDMod = (productA.long()*(torch.ones_like(ID)- ID))* torch.cat((torch.arange(dim)[:,None], torch.arange(dim)[:,None]), 0)
     IDMod = IDMod.to(torch.int32)
-    prodB1_bool = (productA.long()-ID)==1
-    productB1 = torch.where(prodB1_bool, derivative_i_not_equal_j(IDMod,K), torch.zeros_like(productA) )
-    productB = productB0+productB1
+
+    # Derivative_ij_bool corresponds to the entry where one need to compute the derivative when i is different from j
+    Derivative_ij_bool = (productA.long()-ID)==1
+    # Derivative_ij corresponds to the entry where one has computed the derivative if i is different from, ow it is equal to 0
+    Derivative_ij = torch.where(Derivative_ij_bool, derivative_i_not_equal_j(IDMod,K), torch.zeros_like(productA) )
+    Derivative = Derivative_ii + Derivative_ij
     productA = productA.long()
-    print(f"PRODUCTB0 HAS A NAN:{torch.isnan(productB0).any()}")
-    print(f"PRODUCTB1 HAS A NAN:{torch.isnan(productB1).any()}")
-    return background + (productA*productB)
+    # This is the final formula to compute the jacobian of the projection by taking into account the vectorization of P
+    return background + (productA*(Derivative - torch.ones_like(Derivative)))
 
 def JacobianDivergence(n,m):
     
@@ -355,8 +364,6 @@ def JacobianFixedPointP(P, img, sigma, lmbd, device):
     J1 = JacobianDivergence(n,m)
     J2 = JacobianGrad(n,m)
     Id = torch.eye(n*m*2)
-    if torch.isnan(J0).any():
-        print("STOOOOOOp")
     B1 = Id + torch.matmul(J2,J1)
     B0 = torch.matmul(J0, B1)
     
