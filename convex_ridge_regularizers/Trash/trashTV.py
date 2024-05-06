@@ -13,7 +13,7 @@ z, P = TV_Solver_Training(img, lmbd, batch=False, enforce_positivity = True)
 
 hat_P = fixedPointP(P, img, lmbd, tau=1/8, batch = False, device = "cpu")
 
-jacobian = autograd.functional.jacobian(lambda x: fixedPointP(x.view_as(P),img,lmbd=lmbd, tau = 1/8., batch = False, device = "cpu").view(-1), P.view(-1))
+jacobian = autograd.functional.jacobian(lambda x: fixedPointP(x.view_as(hat_P),img,lmbd=lmbd, tau = 1/8., batch = False, device = "cpu").view(-1), P.view(-1))
 
 
 jacobianManual = JacobianFixedPointP(P, img, 8., lmbd, "cpu")
