@@ -5,7 +5,7 @@
         "n_knots": 21,
         "name": "spline"
     },
-    "exp_name": "Sigma_25_Implicit_Layers_010524",
+    "exp_name": "Sigma_5_Implicit_Layers_020524",
     "logging_info": {
         "epochs_per_val": 1,
         "log_dir": "/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/Infimal_conv/CRRNN/Training/Trained_models",
@@ -26,7 +26,7 @@
         "lr_mu": 0.05,
         "lr_spline_coefficients": 5e-05
     },
-    "sigma": 25,
+    "sigma": 5,
     "train_dataloader": {
         "batch_size": 128,
         "num_workers": 1,

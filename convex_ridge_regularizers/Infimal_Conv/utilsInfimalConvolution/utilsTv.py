@@ -89,12 +89,20 @@ class LinearOperatorBatch:
         x.to(self.device)
         nbatches = x.shape[0]
         x.squeeze()
+        out = torch.empty(nbatches, 2, self.height, self.width)
+        for i in range(nbatches):
+            res0 = self.L_0*(x[i,...].reshape(-1))
+            res1 = self.L_1*(x[i,...].reshape(-1))
+            out_0 = torch.reshape(res0, (1, self.height, self.width))
+            out_1 = torch.reshape(res1, (1, self.height, self.width))
+            out[i,...] = torch.cat([out_0, out_1], 0).unsqueeze(0)   
+        return out         
 
-        # The operators have to be applied on a flatten version of the samples of x
-        out_0 = self.batchL_0.apply(x.reshape(nbatches, self.height*self.width))
-        out_1 = self.batchL_1.apply(x.reshape(nbatches, self.height*self.width))
-        out = torch.cat([torch.reshape(out_0, (nbatches, self.height, self.width)).unsqueeze(1), torch.reshape(out_1, (nbatches, self.height, self.width)).unsqueeze(1)], dim = 1)
-        return out # nbatches x 2 x height x width
+        # # The operators have to be applied on a flatten version of the samples of x
+        # out_0 = self.batchL_0.apply(x.reshape(nbatches, self.height*self.width))
+        # out_1 = self.batchL_1.apply(x.reshape(nbatches, self.height*self.width))
+        # out = torch.cat([torch.reshape(out_0, (nbatches, self.height, self.width)).unsqueeze(1), torch.reshape(out_1, (nbatches, self.height, self.width)).unsqueeze(1)], dim = 1)
+        # return out # nbatches x 2 x height x width
     
 
     # Implementation of the application of L (i.e -div)
@@ -212,7 +220,7 @@ class MoreauProximator:
             F = Pnew + (t-1)/tnew*(Pnew -P)
             t = tnew
             P = Pnew
-        return projectionBox(u-alpha*self.batchL.batch_applyL(P), self.bounds[0], self.bounds[1]), P
+        return  P
 
         
 

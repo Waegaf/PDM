@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import DataLoader
 import os, sys
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/training")
-# sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/training")
+sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/training")
 from data import dataset
 import json
 from torch.utils import tensorboard
@@ -14,12 +14,12 @@ ssim = StructuralSimilarityIndexMeasure()
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers")
 sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers")
 from models.utils import build_model
-from Infimal_Conv.utilsInfimalConvolution.utilsInfConvTraining import tstepInfConvDenoiser
 
-# sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/utilsInfimalConvolution")
+
+sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/utilsInfimalConvolution")
 sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/Infimal_conv/utilsInfimalConvolution")
 from utilsInfConvTraining import CRR_NN_Solver_Training, H_fixedPoint, TV_Solver_Training, fixedPointP, JacobianFixedPointP
-from utilsTV import MoreauProximator
+from utilsTv import MoreauProximator
 
 
 class TrainerInfConv:
@@ -56,8 +56,6 @@ class TrainerInfConv:
         # Set up the optimizers
         self.set_optimization()
         self.epochs = config['training_options']['epochs']
-
-        self.denoise = tstepInfConvDenoiser
 
 
         self.criterion = torch.nn.L1Loss(reduction = 'sum')
@@ -151,7 +149,7 @@ class TrainerInfConv:
 
         
         lmbdLagrange = self.config["training_options"]["Lagrange"]
-        alpha = self.config["model"]["alpha"]
+        alpha = self.alpha
         lambdaTV = lmbdLagrange/alpha
         moreauProxBatch = MoreauProximator([40, 40], lambdaTV, [None, None], device = self.device, batch = True)
         moreauProx = MoreauProximator([40,40], lambdaTV, [None, None], device = self.device, batch = False)
@@ -168,11 +166,11 @@ class TrainerInfConv:
             t_steps=self.config["training_options"]["t_steps"]
             # Initialization steps
 
-            z = torch.zeros_like(noisy_data)
-            w = torch.zeros_like(noisy_data)
-            g = torch.zeros_like(noisy_data)
-            Theta1 = torch.zeros_like(noisy_data)
-            Theta2 = torch.zeros_like(noisy_data)
+            z = torch.zeros_like(noisy_data, device=data.device)
+            w = torch.zeros_like(noisy_data, device = data.device)
+            g = torch.zeros_like(noisy_data, device = data.device)
+            Theta1 = torch.zeros_like(noisy_data, device = data.device)
+            Theta2 = torch.zeros_like(noisy_data, device = data.device)
 
             # Differentiable steps
             JacobiansP_OuterLoop = []
@@ -187,26 +185,27 @@ class TrainerInfConv:
                     flattenOuputP = []
                     for nsample in range(nsamples):
                         flattenOuputP.append(P[nsample,...].view(-1))
-                Pref = P[nsample]
+                Pref = P[nsample,...]
                 tau = 1/8.
                 JacobiansP = []
                 samplesZ = []
                 for nsample in range(nsamples):
                     flattenSampleP = flattenOuputP[nsample]
-                    data = (u[nsample,...] - w[nsample,...] - Theta1[nsample,...]).unsqueeze(0)
+                    dataZ = (u[nsample,...] - w[nsample,...] - Theta1[nsample,...]).unsqueeze(0)
                     
-                    flattenSampleP = flattenSampleP - fixedPointP(flattenSampleP.view_as(P[0,...]), g = data, lmbd= lambdaTV, tau = tau, batch = False, device = self.device)
+                    flattenSampleP = flattenSampleP - fixedPointP(flattenSampleP.view_as(Pref), g = dataZ, lmbd= lambdaTV, tau = tau, batch = False, device = self.device).view(-1)
                     with torch.no_grad():
-                        JacobianP = JacobianFixedPointP( flattenOuputP.view_as(Pref), img = data, sigma = 1/tau , lmbd = lambdaTV, device = self.device)
+                        JacobianP = JacobianFixedPointP( flattenSampleP.view_as(Pref), img = dataZ, sigma = 1/tau , lmbd = lambdaTV, device = self.device)
 
-                    JacobiansP.append(JacobianP) 
-                    flattenSampleP.register_hook(lambda grad, ns = nsample, tstep =t: torch.linalg.solve(JacobiansP_OuterLoop[tstep][ns].transpose(0,1), grad))
+                    JacobiansP.append(JacobianP)
+                    if t > 0: 
+                        flattenSampleP.register_hook(lambda grad, ns = nsample, tstep =t: torch.linalg.solve(JacobiansP_OuterLoop[tstep][ns].transpose(0,1), grad))
                     P = flattenSampleP.view_as(Pref)
-                    Z = data - lambdaTV*moreauProx.batchL.batch_applyL(P)
-                    samplesZ.append(Z)
+                    Z = dataZ - lambdaTV*moreauProx.L.applyL(P)
+                    samplesZ.append(Z.squeeze())
                 
                 ZBatches = torch.stack(samplesZ, 0)
-
+                ZBatches = torch.unsqueeze(ZBatches, 1)
                 # w - optimization
                 with torch.no_grad():
                     noisy_data = u - ZBatches - Theta1
@@ -221,14 +220,13 @@ class TrainerInfConv:
                 # Computation of the jacobian matrix of the implicit function for each sample of the batch
                 for nsample in range(nsamples):
                     flattenSampleW = flattenOutputW[nsample]
-                    flattenOutputW = flattenOutputW - H_fixedPoint(flattenSampleW.view_as(wOutputRef), self.model, noisy_data[nsample,...], lmbdLagrange, beta = self.model.lmbd_transformed, mu = self.model.mu_transformed).view(-1)
+                    flattenSampleW = flattenSampleW - H_fixedPoint(flattenSampleW.view_as(wOutputRef), self.model, noisy_data[nsample,...], lmbdLagrange, beta = self.model.lmbd_transformed, mu = self.model.mu_transformed).view(-1)
                     with torch.no_grad():
-                        JacobianW = self.model.mu_transformed*self.model.lmbd_transformed*self.model.Hessian(self.model.mu_transformed*flattenOutputW.view_as(wOutputRef)).reshape(1600,1600)+Id
+                        JacobianW = self.model.mu_transformed*self.model.lmbd_transformed*self.model.Hessian(self.model.mu_transformed*flattenSampleW.view_as(wOutputRef)).reshape(1600,1600)+Id
                     JacobiansW.append(JacobianW)
                     flattenSampleW.register_hook(lambda grad, ns = nsample, tstep = t: torch.linalg.solve(JacobiansW_OuterLoop[tstep][ns].transpose(0,1), grad))
                     samplesW.append(flattenSampleW.view_as(wOutputRef))
                 WBatches = torch.stack(samplesW, 0)
-
                 # g - optimization
                 g = torch.clip(u + Theta2, 0)
 
@@ -237,8 +235,8 @@ class TrainerInfConv:
                 
                 # Theta2 - optimization
                 Theta2 = Theta2 + u - g
-            JacobiansP_OuterLoop.append(JacobiansP)
-            JacobiansW_OuterLoop.append(JacobiansW)    
+                JacobiansP_OuterLoop.append(JacobiansP)
+                JacobiansW_OuterLoop.append(JacobiansW)    
             # data fidelity normalizedd
             data_fidelity = (self.criterion(u, data)) / (data.shape[0]) * 40 * 30 / data.shape[2] / data.shape[3]
 
@@ -327,9 +325,10 @@ class TrainerInfConv:
             self.writer.add_scalar(f'Convolutional/Training {k}', v, self.wrt_step)
 
     
-    def save_checkpoint(self, epoch):
+    def save_checkpoint(self, epoch, batch_idx = 9):
         state = {
             'epoch': epoch,
+            'batch_idx': batch_idx,
             'state_dict': self.model.state_dict(),
             'config': self.config,
             'u': self.model.u
@@ -338,5 +337,5 @@ class TrainerInfConv:
             state['optimizer_' + str(i+1) + '_state_dict'] = self.optimizers[i].state_dict()
 
         print('Saving a checkpoint:')
-        filename = self.checkpoint_dir + '/checkpoint_' + str(epoch) + '.pth'
+        filename = self.checkpoint_dir + '/checkpoint_' + str(epoch) + str(batch_idx) +'.pth'
         torch.save(state, filename)

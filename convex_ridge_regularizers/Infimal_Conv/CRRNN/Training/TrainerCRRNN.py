@@ -1,8 +1,8 @@
 import torch
 from torch.utils.data import DataLoader
 import sys
-# sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/training")
-sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/training")
+sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/training")
+# sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/training")
 from data import dataset
 import os
 import json
@@ -11,14 +11,14 @@ from tqdm import tqdm
 from torchmetrics import StructuralSimilarityIndexMeasure
 from torchmetrics.functional import peak_signal_noise_ratio as psnr
 import torch.autograd as autograd
-# sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers")
-sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers")
+sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers")
+# sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers")
 from models.utils import build_model
 
 ssim = StructuralSimilarityIndexMeasure()
 
-# sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/utilsInfimalConvolution")
-sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/Infimal_conv/utilsInfimalConvolution")
+sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/utilsInfimalConvolution")
+# sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/Infimal_conv/utilsInfimalConvolution")
 from utilsInfConvTraining import CRR_NN_Solver_Training, H_fixedPoint
 
 

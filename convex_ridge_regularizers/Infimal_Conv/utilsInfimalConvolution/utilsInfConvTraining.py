@@ -8,8 +8,9 @@ from torchmetrics.functional import peak_signal_noise_ratio as psnr
 from torchmetrics.functional import structural_similarity_index_measure as ssim
 if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/inverse_problems/utils_inverse_problems")
-sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/utilsInfimalConvolution")
+# sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/inverse_problems/utils_inverse_problems")
+# sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/utilsInfimalConvolution")
+sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/Infimal_conv/utilsInfimalConvolution")
 from utilsTv import TV_reconstruction, Tv_denoising_reconstruction, MoreauProximator, LinearOperator, LinearOperatorBatch
 # from reconstruction_map_crr import AdaGD_Recon, AdaAGD_Recon
 
@@ -233,7 +234,7 @@ def tstepInfConvDenoiser(model, x_noisy, t_steps, alpha,  **kwargs):
     return u
 
 
-def JacobianProjUnitBall(P):
+def JacobianProjUnitBall(P, device):
     """
     Input: P of size (2,n,m)
     Output: the Jacobian of the Projection over the unit ball evaluated at P
@@ -250,9 +251,9 @@ def JacobianProjUnitBall(P):
     is_norm_larger_than_1_2 = torch.cat((is_norm_larger_than_1, is_norm_larger_than_1), 0)[None,:]
 
     # Constrution of the tensor background which is 1 if i=j (mod nm) (i.e. if i and j are related)
-    IndicesUP = -(torch.arange(dim)[:, None] ) + ((torch.arange(2*dim)[None, :] ))
+    IndicesUP = -(torch.arange(dim, device= device)[:, None] ) + ((torch.arange(2*dim, device= device)[None, :] ))
     boolean = (IndicesUP == dim) | (IndicesUP == 0)
-    backgroundUp = torch.where(boolean, torch.tensor(1.0), torch.tensor(0.0))
+    backgroundUp = torch.where(boolean, torch.tensor(1.0, device= device), torch.tensor(0.0, device= device))
     background = torch.cat((backgroundUp, backgroundUp), 0)
 
     # If the norm is not larger than one, we do not need to compute the derivative
@@ -266,9 +267,9 @@ def JacobianProjUnitBall(P):
     def derivative_i_not_equal_j(i,k):
         return -PFlatten[1,i]*PFlatten[0,i]/torch.pow(normFlatten[i-(1-k)*dim], 3/2)
 
-    ID = torch.eye(2*dim)
+    ID = torch.eye(2*dim, device= device)
     # IDMod contains the value i on its diagonal, and it helps us to find the i corresponding to FlattenP[i]
-    IDMod = ID * torch.cat((torch.arange(dim)[:,None], torch.arange(dim)[:,None]), 0)
+    IDMod = ID * torch.cat((torch.arange(dim, device= device)[:,None], torch.arange(dim, device= device)[:,None]), 0)
     IDMod = IDMod.to(torch.int32)
     # K contains the value k-1 where k=1,2 on its diagonal to help us to compute the corresponding derivative when i diff from j
     K = ID * (torch.cat((torch.full((dim,1), 1), torch.full((dim,1), 0)), 0))
@@ -281,29 +282,29 @@ def JacobianProjUnitBall(P):
 
     # IDMod corresponds to the entry where we need to compute the derivative when i is different of j and the value of this entry to the value
     # of 0<= i <= n*m
-    IDMod = (productA.long()*(torch.ones_like(ID)- ID))* torch.cat((torch.arange(dim)[:,None], torch.arange(dim)[:,None]), 0)
+    IDMod = (productA.long()*(torch.ones_like(ID, device= device)- ID))* torch.cat((torch.arange(dim, device= device)[:,None], torch.arange(dim, device= device)[:,None]), 0)
     IDMod = IDMod.to(torch.int32)
 
     # Derivative_ij_bool corresponds to the entry where one need to compute the derivative when i is different from j
     Derivative_ij_bool = (productA.long()-ID)==1
     # Derivative_ij corresponds to the entry where one has computed the derivative if i is different from, ow it is equal to 0
-    Derivative_ij = torch.where(Derivative_ij_bool, derivative_i_not_equal_j(IDMod,K), torch.zeros_like(productA) )
+    Derivative_ij = torch.where(Derivative_ij_bool, derivative_i_not_equal_j(IDMod,K), torch.zeros_like(productA, device= device) )
     Derivative = Derivative_ii + Derivative_ij
     productA = productA.long()
     # This is the final formula to compute the jacobian of the projection by taking into account the vectorization of P
-    return background + (productA*(Derivative - torch.ones_like(Derivative)))
+    return background + (productA*(Derivative - torch.ones_like(Derivative, device= device)))
 
-def JacobianDivergence(n,m):
+def JacobianDivergence(n,m, device):
     
     def derivateP_1(i,j):
-        leftMatrix = torch.zeros(n,m)
+        leftMatrix = torch.zeros(n,m, device= device)
         leftMatrix[i,j] = 1.0
         if i+1 < n:
             leftMatrix[i+1,j] = -1.
         return leftMatrix.view(-1)
     
     def derivateP_2(i,j):
-        rigthMatrix = torch.zeros(n,m)
+        rigthMatrix = torch.zeros(n,m, device= device)
         rigthMatrix[i,j] = 1.0
         if j+1 < m:
             rigthMatrix[i,j+1] = -1.0
@@ -322,17 +323,17 @@ def JacobianDivergence(n,m):
     JacobianDiv = torch.cat((leftMatrix, rigthMatrix), 1)
     return JacobianDiv
 
-def JacobianGrad(n,m):
+def JacobianGrad(n,m, device):
     
     def derivateGrad_1(i,j):
-        rigthMatrix = torch.zeros(n,m)
+        rigthMatrix = torch.zeros(n,m, device= device)
         if i < n-1:
             rigthMatrix[i,j] = -1.0
             rigthMatrix[i+1,j] = 1.0
         return rigthMatrix.view(-1)
     
     def derivateGrad_2(i,j):
-        leftMatrix = torch.zeros(n,m)
+        leftMatrix = torch.zeros(n,m, device= device)
         if j < m-1:
             leftMatrix[i,j] = -1.0
             leftMatrix[i,j+1] = 1.0
@@ -360,10 +361,10 @@ def JacobianFixedPointP(P, img, sigma, lmbd, device):
 
     z = img + lmbd*divP
     gradZ = LinearOp.applyL_t(z)
-    J0 = JacobianProjUnitBall(P+sigma*gradZ)
-    J1 = JacobianDivergence(n,m)
-    J2 = JacobianGrad(n,m)
-    Id = torch.eye(n*m*2)
+    J0 = JacobianProjUnitBall(P+sigma*gradZ, device)
+    J1 = JacobianDivergence(n,m, device)
+    J2 = JacobianGrad(n,m, device)
+    Id = torch.eye(n*m*2, device= device)
     B1 = Id + torch.matmul(J2,J1)
     B0 = torch.matmul(J0, B1)
     
