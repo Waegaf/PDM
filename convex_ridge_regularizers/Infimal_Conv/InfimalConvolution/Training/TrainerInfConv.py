@@ -194,10 +194,11 @@ class TrainerInfConv:
                     dataZ = (u[nsample,...] - w[nsample,...] - Theta1[nsample,...]).unsqueeze(0)
                     
                     flattenSampleP = flattenSampleP - fixedPointP(flattenSampleP.view_as(Pref), g = dataZ, lmbd= lambdaTV, tau = tau, batch = False, device = self.device).view(-1)
-                    with torch.no_grad():
-                        JacobianP = JacobianFixedPointP( flattenSampleP.view_as(Pref), img = dataZ, sigma = 1/tau , lmbd = lambdaTV, device = self.device)
+                    if t > 0:
+                        with torch.no_grad():
+                            JacobianP = JacobianFixedPointP( flattenSampleP.view_as(Pref), img = dataZ, sigma = 1/tau , lmbd = lambdaTV, device = self.device)
 
-                    JacobiansP.append(JacobianP)
+                            JacobiansP.append(JacobianP)
                     if t > 0: 
                         flattenSampleP.register_hook(lambda grad, ns = nsample, tstep =t: torch.linalg.solve(JacobiansP_OuterLoop[tstep][ns].transpose(0,1), grad))
                     P = flattenSampleP.view_as(Pref)
@@ -223,7 +224,7 @@ class TrainerInfConv:
                     flattenSampleW = flattenSampleW - H_fixedPoint(flattenSampleW.view_as(wOutputRef), self.model, noisy_data[nsample,...], lmbdLagrange, beta = self.model.lmbd_transformed, mu = self.model.mu_transformed).view(-1)
                     with torch.no_grad():
                         JacobianW = self.model.mu_transformed*self.model.lmbd_transformed*self.model.Hessian(self.model.mu_transformed*flattenSampleW.view_as(wOutputRef)).reshape(1600,1600)+Id
-                    JacobiansW.append(JacobianW)
+                        JacobiansW.append(JacobianW)
                     flattenSampleW.register_hook(lambda grad, ns = nsample, tstep = t: torch.linalg.solve(JacobiansW_OuterLoop[tstep][ns].transpose(0,1), grad))
                     samplesW.append(flattenSampleW.view_as(wOutputRef))
                 WBatches = torch.stack(samplesW, 0)
@@ -235,7 +236,8 @@ class TrainerInfConv:
                 
                 # Theta2 - optimization
                 Theta2 = Theta2 + u - g
-                JacobiansP_OuterLoop.append(JacobiansP)
+                if t > 0:
+                    JacobiansP_OuterLoop.append(JacobiansP)
                 JacobiansW_OuterLoop.append(JacobiansW)    
             # data fidelity normalizedd
             data_fidelity = (self.criterion(u, data)) / (data.shape[0]) * 40 * 30 / data.shape[2] / data.shape[3]
@@ -262,7 +264,7 @@ class TrainerInfConv:
             self.wrt_step = (epoch) * len(self.train_dataloader) + batch_idx
             self.write_scalars_tb(log)
 
-            if batch_idx % 100 == 0:
+            if batch_idx % 10 == 0:
                 self.save_checkpoint(epoch, batch_idx)
 
             tbar.set_description('T ({}) | loss {:.4f}  lmbd {:.3f} | mu {:.3f} | TV2 {:.3f}'.format(epoch, log['loss'],  log['lmbd'], log['mu'], self.model.TV2()))

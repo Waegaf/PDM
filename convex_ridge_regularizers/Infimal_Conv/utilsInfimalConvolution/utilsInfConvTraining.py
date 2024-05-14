@@ -233,7 +233,6 @@ def tstepInfConvDenoiser(model, x_noisy, t_steps, alpha,  **kwargs):
     
     return u
 
-
 def JacobianProjUnitBall(P, device):
     """
     Input: P of size (2,n,m)
@@ -261,19 +260,26 @@ def JacobianProjUnitBall(P, device):
 
     # Declaration of the derivative functions
     def derivative_i_equal_j(i, k):  
-        norm =  torch.pow(normFlatten[i-(1-k)*dim], 3/2)
+        i = i.long()
+        k = k.long()
+        indexes = (i-(1-k)*dim).long()
+        norm =  torch.pow(normFlatten[indexes], 3/2)
         return PFlatten[k,i]/norm
         
     def derivative_i_not_equal_j(i,k):
-        return -PFlatten[1,i]*PFlatten[0,i]/torch.pow(normFlatten[i-(1-k)*dim], 3/2)
+        i = i.long()
+        k = k.long()
+        indexes = (i-(1-k)*dim).long()
+        return -PFlatten[1,i]*PFlatten[0,i]/torch.pow(normFlatten[indexes], 3/2)
 
     ID = torch.eye(2*dim, device= device)
     # IDMod contains the value i on its diagonal, and it helps us to find the i corresponding to FlattenP[i]
     IDMod = ID * torch.cat((torch.arange(dim, device= device)[:,None], torch.arange(dim, device= device)[:,None]), 0)
     IDMod = IDMod.to(torch.int32)
     # K contains the value k-1 where k=1,2 on its diagonal to help us to compute the corresponding derivative when i diff from j
-    K = ID * (torch.cat((torch.full((dim,1), 1), torch.full((dim,1), 0)), 0))
+    K = ID * (torch.cat((torch.full((dim,1), 1, device = ID.device), torch.full((dim,1), 0, device = ID.device)), 0))
     K = K.to(torch.int32)
+    K = K.long()
     # Derivative_ii_bool corresponds to the entry where we need to compute the derivative when i equals j
     Derivative_ii_bool = productA.long()*ID
     Derivative_ii_bool = Derivative_ii_bool == 1
@@ -284,6 +290,7 @@ def JacobianProjUnitBall(P, device):
     # of 0<= i <= n*m
     IDMod = (productA.long()*(torch.ones_like(ID, device= device)- ID))* torch.cat((torch.arange(dim, device= device)[:,None], torch.arange(dim, device= device)[:,None]), 0)
     IDMod = IDMod.to(torch.int32)
+    IDMod = IDMod.long()
 
     # Derivative_ij_bool corresponds to the entry where one need to compute the derivative when i is different from j
     Derivative_ij_bool = (productA.long()-ID)==1
@@ -293,6 +300,7 @@ def JacobianProjUnitBall(P, device):
     productA = productA.long()
     # This is the final formula to compute the jacobian of the projection by taking into account the vectorization of P
     return background + (productA*(Derivative - torch.ones_like(Derivative, device= device)))
+
 
 def JacobianDivergence(n,m, device):
     

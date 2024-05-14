@@ -89,7 +89,7 @@ class LinearOperatorBatch:
         x.to(self.device)
         nbatches = x.shape[0]
         x.squeeze()
-        out = torch.empty(nbatches, 2, self.height, self.width)
+        out = torch.empty(nbatches, 2, self.height, self.width, device = x.device)
         for i in range(nbatches):
             res0 = self.L_0*(x[i,...].reshape(-1))
             res1 = self.L_1*(x[i,...].reshape(-1))
@@ -114,6 +114,7 @@ class LinearOperatorBatch:
         for i in range(nbatches):
             out[i,...] = torch.reshape(self.L_0.H*(y[i,0,...].view(-1)), (self.height, self.width)) + torch.reshape(self.L_1.H*(y[i,1,...].view(-1)), (self.height, self.width))
         out = out.unsqueeze(1)
+        out = out.to(self.device)
         return out # nbatches x 1 x height x width
 
 
@@ -188,8 +189,11 @@ class MoreauProximator:
         alpha = alpha * self.lmbd
         P = torch.cat((torch.zeros_like(u), torch.zeros_like(u)), dim = 1).squeeze()
         F = torch.cat((torch.zeros_like(u), torch.zeros_like(u)), dim = 1).squeeze()
+        P = P.to(self.device)
+        F = F.to(self.device)
         t = 1.0
-
+        print(f"Device of applyProxPrimalDual is {P.device}")
+        print(f"Device of u is {u.device}")
         # Begin of the iterations
         for iteration in range(self.num_iter):
             Pnew = F + (self.gamma/alpha)*(self.L.applyL_t(projectionBox(u - alpha*self.L.applyL(F),self.bounds[0], self.bounds[1])))

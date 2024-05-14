@@ -27,7 +27,7 @@ def main(device):
 if __name__ == '__main__':
     # PARSE THE ARGS
     parser = argparse.ArgumentParser(description = 'Pytorch Training')
-    parser.add_argument('-d', '--device', default = "cpu", type = str, help = 'device to use')
+    parser.add_argument('-d', '--device', default = "cuda", type = str, help = 'device to use')
 
     args = parser.parse_args()
 

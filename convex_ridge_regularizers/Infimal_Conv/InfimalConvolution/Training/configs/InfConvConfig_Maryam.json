@@ -41,7 +41,7 @@
             "nb_steps": 10,
             "use": true
         },
-        "t_steps": 5,
+        "t_steps": 2,
         "tv2_lambda": 0.002
     },
     "val_dataloader": {
