@@ -230,7 +230,6 @@ class TrainerCRRNN:
             noisy_data = data + noise
 
             with torch.no_grad():
-                # output = self.denoise(noisy_data, t_steps=self.config["training_options"]["t_steps"])
                 output = CRR_NN_Solver_Training(noisy_data, self.model, lmbd = self.model.lmbd_transformed, mu = self.model.mu_transformed, max_iter = 200, batch = True, enforce_positivity = True, device = self.device)
 
                 loss = self.criterion(output, data)

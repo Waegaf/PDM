@@ -210,7 +210,7 @@ class TrainerInfConv:
                 # w - optimization
                 with torch.no_grad():
                     noisy_data = u - ZBatches - Theta1
-                    wOutput = CRR_NN_Solver_Training(noisy_data, self.model, lmbd = (1/lmbdLagrange) * self.model.lmbd_transformed, mu = self.model.mu_transformed, max_iter = 200, batch = True, enforce_positivity = True, device = self.device)
+                    wOutput = CRR_NN_Solver_Training(noisy_data, self.model, lmbd = (1/lmbdLagrange) * self.model.lmbd_transformed, mu = self.model.mu_transformed, max_iter = 200, batch = True, enforce_positivity = False, device = self.device)
                     flattenOutputW = []
                     for nsample in range(nsamples):
                         flattenOutputW.append(wOutput[nsample,...].view(-1))
@@ -289,12 +289,36 @@ class TrainerInfConv:
             noise = (self.sigma/255.0) * torch.randn(data.shape, device = data.device)
             noisy_data = data + noise
 
+            lmbdLagrange = self.config["training_options"]["Lagrange"]
+            alpha = self.alpha
+            lambdaTV = lmbdLagrange/alpha
+
+            moreauProx = MoreauProximator([40,40], lambdaTV, [None, None], device = self.device, batch = False)
+
             with torch.no_grad():
-                output = self.denoise(self.model, noisy_data, t_steps = self.config["training_options"]["t_steps"], alpha = self.alpha)
+                z = torch.zeros_like(noisy_data, device=data.device)
+                w = torch.zeros_like(noisy_data, device = data.device)
+                g = torch.zeros_like(noisy_data, device = data.device)
+                Theta1 = torch.zeros_like(noisy_data, device = data.device)
+                Theta2 = torch.zeros_like(noisy_data, device = data.device)
 
-                loss = self.criterion(output, data)
+                for t in range(self.config["training_options"]["t_steps"]):
 
-                out_val = torch.clamp(output, 0., 0.1)
+                    u = (1/2*lmbdLagrange+1)*(noisy_data + lmbdLagrange*(z+w+Theta1+g-Theta2))
+
+                    z = moreauProx.applyProx(u-w-Theta1, alpha = 1.0)
+
+                    w = CRR_NN_Solver_Training(u - z- Theta1, self.model, lmbd = (1.0/lmbdLagrange)* self.model.lmbd_transformed, mu = self.model.mu_transformed, max_iter = 200, batch = False, enforce_positivity = False, device = self.device)
+
+                    g = torch.clip(u + Theta2, 0)
+
+                    Theta1 = Theta1 - u + z + w
+
+                    Theta2 = Theta2 + u - g
+
+                loss = self.criterion(u, data)
+
+                out_val = torch.clamp(u, 0., 0.1)
 
                 loss_val = loss_val + loss.cpu().item()
                 psnr_val = psnr_val + psnr(out_val, data, 1.).mean().item()

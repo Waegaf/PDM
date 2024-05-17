@@ -32,9 +32,10 @@
         "batch_size": 8,
         "num_workers": 1,
         "shuffle": true,
-        "train_data_file": "C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/preprocessed/BSD/train.h5"
+        "train_data_file": "C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/preprocessed/new/BSD/train.h5"
     },
     "training_options": {
+        "Lagrange": 0.01,
         "epochs": 10,
         "lr_scheduler": {
             "gamma": 0.75,
@@ -48,6 +49,6 @@
         "batch_size": 1,
         "num_workers": 1,
         "shuffle": false,
-        "val_data_file": "C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/preprocessed/BSD/validation.h5"
+        "val_data_file": "C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/preprocessed/new/BSD/validation.h5"
     }
 }

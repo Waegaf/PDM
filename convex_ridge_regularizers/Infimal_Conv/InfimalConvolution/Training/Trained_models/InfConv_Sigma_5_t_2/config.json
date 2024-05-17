@@ -1,10 +1,11 @@
 {
     "activation_params": {
         "knots_range": 0.1,
-        "n_channels": 2,
+        "n_channels": 16,
         "n_knots": 11,
         "name": "spline"
     },
+    "alpha": 0.05,
     "exp_name": "InfConv_Sigma_5_t_2",
     "logging_info": {
         "epochs_per_val": 1,
@@ -19,7 +20,7 @@
         ],
         "kernel_size": 7
     },
-    "number_of_parameters": 0,
+    "number_of_parameters": 6842,
     "optimizer": {
         "lr_conv": 0.001,
         "lr_lmbd": 0.05,
@@ -34,8 +35,8 @@
         "train_data_file": "/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/preprocessed/new/BSD/train.h5"
     },
     "training_options": {
+        "Lagrange": 0.01,
         "epochs": 10,
-        "Lagrange": 1e-2,
         "lr_scheduler": {
             "gamma": 0.75,
             "nb_steps": 10,
@@ -49,6 +50,5 @@
         "num_workers": 1,
         "shuffle": false,
         "val_data_file": "/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/preprocessed/new/BSD/validation.h5"
-    },
-    "alpha": 5e-2
+    }
 }
