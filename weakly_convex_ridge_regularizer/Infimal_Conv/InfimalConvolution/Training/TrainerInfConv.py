@@ -15,6 +15,11 @@ sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/weakly_convex_ridg
 from models import deep_equilibrium
 from models import utils as models_utils
 
+sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/utilsInfimalConvolution")
+sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/Infimal_conv/utilsInfimalConvolution")
+from utilsInfConvTraining import CRR_NN_Solver_Training, H_fixedPoint, TV_Solver_Training, fixedPointP, JacobianFixedPointP
+from utilsTv import MoreauProximator
+
 sys.path.insert(0,"../utils/")
 from training.utils.utils import build_model
 
@@ -28,6 +33,7 @@ class Trainer:
         self.device = device
         self.noise_val = config['noise_val']
         self.noise_range = config['noise_range']
+        self.alpha = config["alpha"]
         self.valid_epoch_num = 0
 
         # Datasets
@@ -133,7 +139,17 @@ class Trainer:
 
         log = {}
 
+        t_steps = self.config["training_options"]["t_steps"]
+
+        lmbdLagrange = self.config["training_options"]["Lagrange"]
+
+        alpha = self.alpha
+        lambdaTV = lmbdLagrange/alpha
+        moreauProxBatch = MoreauProximator([40, 40], lambdaTV, [None, None], device = self.device, batch = True)
+        moreauProx = MoreauProximator([40,40], lambdaTV, [None, None], device = self.device, batch = False)
+
         for batch_idx, data in enumerate(tbar):
+            nsamples = data.shape[0]
             self.batch_seen += 1
 
             # validation / save checkpoints / logs / scheduler...
@@ -163,10 +179,65 @@ class Trainer:
             noisy_data = data + noise
 
             self.optimizer.zero_grad()
-            # estimate fixed point
-            output = self.denoise(noisy_data, sigma = sigma)
-            
+            # compute the output after t_steps of ADMM step
 
+            # initialization
+
+            z = torch.zeros_like(noisy_data, device=data.device)
+            w = torch.zeros_like(noisy_data, device = data.device)
+            g = torch.zeros_like(noisy_data, device = data.device)
+            Theta1 = torch.zeros_like(noisy_data, device = data.device)
+            Theta2 = torch.zeros_like(noisy_data, device = data.device)
+
+            # Differentiable steps
+            JacobiansP_OuterLoop = []
+
+            for step in range(t_steps):
+                # u - optimization
+                u = (1/2*lmbdLagrange+1)*(noisy_data + lmbdLagrange*(z+w+Theta1+g-Theta2))
+                # z - optimization
+                with torch.no_grad():
+                    P = moreauProxBatch.batch_applyProxPrimalDual(u - w - Theta1, alpha = 1.0)
+                    flattenOuputP = []
+                    for nsample in range(nsamples):
+                        flattenOuputP.append(P[nsample,...].view(-1))
+                Pref = P[nsample,...]
+                tau = 1/8.
+                JacobiansP = []
+                samplesZ = []
+                for nsample in range(nsamples):
+                    flattenSampleP = flattenOuputP[nsample]
+                    dataZ = (u[nsample,...] - w[nsample,...] - Theta1[nsample,...]).unsqueeze(0)
+                    
+                    flattenSampleP = flattenSampleP - fixedPointP(flattenSampleP.view_as(Pref), g = dataZ, lmbd= lambdaTV, tau = tau, batch = False, device = self.device).view(-1)
+                    if step > 0:
+                        with torch.no_grad():
+                            JacobianP = JacobianFixedPointP( flattenSampleP.view_as(Pref), img = dataZ, sigma = 1/tau , lmbd = lambdaTV, device = self.device)
+
+                            JacobiansP.append(JacobianP)
+                    if step > 0: 
+                        flattenSampleP.register_hook(lambda grad, ns = nsample, tstep = step: torch.linalg.solve(JacobiansP_OuterLoop[tstep][ns].transpose(0,1), grad))
+                    P = flattenSampleP.view_as(Pref)
+                    Z = dataZ - lambdaTV*moreauProx.L.applyL(P)
+                    samplesZ.append(Z.squeeze())
+                
+                ZBatches = torch.stack(samplesZ, 0)
+                z = torch.unsqueeze(ZBatches, 1)
+                 # w - optimization
+                 # estimate fixed point
+                w = self.denoise(u -z -Theta1, sigma = sigma)
+                # g - optimization
+                g = torch.clip(u + Theta2, 0)
+
+                # Theta1 - optimization
+                Theta1 = Theta1 -u + z + w
+                
+                # Theta2 - optimization
+                Theta2 = Theta2 + u - g
+                if step > 0:
+                    JacobiansP_OuterLoop.append(JacobiansP)    
+                
+            output = (1/2*lmbdLagrange+1)*(noisy_data + lmbdLagrange*(z+w+Theta1+g-Theta2))     
             loss = (self.criterion(output, data))/(data.shape[0]) * (40 / data.shape[2])**2
   
             loss.backward()

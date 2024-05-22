@@ -206,10 +206,10 @@ class TrainerInfConv:
                     samplesZ.append(Z.squeeze())
                 
                 ZBatches = torch.stack(samplesZ, 0)
-                ZBatches = torch.unsqueeze(ZBatches, 1)
+                z = torch.unsqueeze(ZBatches, 1)
                 # w - optimization
                 with torch.no_grad():
-                    noisy_data = u - ZBatches - Theta1
+                    noisy_data = u - z - Theta1
                     wOutput = CRR_NN_Solver_Training(noisy_data, self.model, lmbd = (1/lmbdLagrange) * self.model.lmbd_transformed, mu = self.model.mu_transformed, max_iter = 200, batch = True, enforce_positivity = False, device = self.device)
                     flattenOutputW = []
                     for nsample in range(nsamples):
@@ -227,20 +227,21 @@ class TrainerInfConv:
                         JacobiansW.append(JacobianW)
                     flattenSampleW.register_hook(lambda grad, ns = nsample, tstep = t: torch.linalg.solve(JacobiansW_OuterLoop[tstep][ns].transpose(0,1), grad))
                     samplesW.append(flattenSampleW.view_as(wOutputRef))
-                WBatches = torch.stack(samplesW, 0)
+                w = torch.stack(samplesW, 0)
                 # g - optimization
                 g = torch.clip(u + Theta2, 0)
 
                 # Theta1 - optimization
-                Theta1 = Theta1 -u + ZBatches + WBatches
+                Theta1 = Theta1 -u + z + w
                 
                 # Theta2 - optimization
                 Theta2 = Theta2 + u - g
                 if t > 0:
                     JacobiansP_OuterLoop.append(JacobiansP)
-                JacobiansW_OuterLoop.append(JacobiansW)    
+                JacobiansW_OuterLoop.append(JacobiansW)
+            output = (1/2*lmbdLagrange+1)*(noisy_data + lmbdLagrange*(z+w+Theta1+g-Theta2))     
             # data fidelity normalizedd
-            data_fidelity = (self.criterion(u, data)) / (data.shape[0]) * 40 * 30 / data.shape[2] / data.shape[3]
+            data_fidelity = (self.criterion(output, data)) / (data.shape[0]) * 40 * 30 / data.shape[2] / data.shape[3]
 
             # Regularization
 
