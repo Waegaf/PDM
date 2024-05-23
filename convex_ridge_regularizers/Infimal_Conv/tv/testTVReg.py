@@ -21,15 +21,15 @@ device = 'cpu'
 
 # Load of the image (.jpg)
 # img = cv2.resize(cv2.imread("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/Images/Lenna.png", cv2.IMREAD_GRAYSCALE), (504, 378))
-img = cv2.resize(cv2.imread("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/Images/Lenna.png", cv2.IMREAD_GRAYSCALE),(400,400))
+img = cv2.imread("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/Images/whiteBackground.png", cv2.IMREAD_GRAYSCALE)
 img_torch = torch.tensor(img, device = device).reshape((1,1) + img.shape)/255
 
 #Creation of the noisy image by adding some normal noise
-img_torch_noisy = img_torch + 25/255 * torch.randn_like(img_torch)
+img_torch_noisy = img_torch + 100/255 * torch.randn_like(img_torch)
 
 
 # Set of the hyperparameters to tune
-lmbd = 1e-1
+lmbd = 5
 
 
 # Reconstruction of the denoised image (using only the proximal operator)
@@ -69,7 +69,7 @@ ax3.set_yticks([])
 ax3.set_xticks([])
 
 
-fileName = f"1504DenoisedLenna{lmbd*100:.0f}.png"
+fileName = f"2305DenoisedWhiteBackground{lmbd*100:.0f}.png"
 path = os.path.join("Infimal_Conv/tv/ResultsTV", fileName) 
 plt.savefig(path)
 

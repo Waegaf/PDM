@@ -316,6 +316,7 @@ class TrainerInfConv:
                     Theta1 = Theta1 - u + z + w
 
                     Theta2 = Theta2 + u - g
+                u = (1/2*lmbdLagrange+1)*(noisy_data + lmbdLagrange*(z+w+Theta1+g-Theta2))
 
                 loss = self.criterion(u, data)
 

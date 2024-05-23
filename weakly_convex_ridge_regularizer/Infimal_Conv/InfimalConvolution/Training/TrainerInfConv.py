@@ -23,7 +23,7 @@ from utilsTv import MoreauProximator
 sys.path.insert(0,"../utils/")
 from training.utils.utils import build_model
 
-class Trainer:
+class TrainerInfConv:
     """
     """
     def __init__(self, config, seed, device):
