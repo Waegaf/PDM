@@ -8,7 +8,6 @@ from TrainerCRRNN import TrainerCRRNN
 
 def main(device):
 
-
     config_path = 'C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/CRRNN/Training/configs/CRRNNTestConfig.json'
     config = json.load(open(config_path))
 
