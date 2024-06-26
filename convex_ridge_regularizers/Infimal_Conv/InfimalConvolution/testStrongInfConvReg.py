@@ -7,8 +7,11 @@ from matplotlib.gridspec import GridSpec
 # Add of the corresponding paths to be enable to use the wanted functions
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers")
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/utilsInfimalConvolution")
-from utilsTvCRRNN import reconstruction_map_InfTVCRRNN
-from models import utils
+from utilsTvCRRNN import reconstruction_map_InfTVCRRNN, reconstruction_map_InfStrongTVCRRNN
+sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code")
+from weakly_convex_ridge_regularizer.training.utils import utils
+from reconstruction_map_wcrr import SAGD_Recon
+from reconstruction_map_crr import AdaGD_Recon, AdaAGD_Recon
 
 # Creation of a folder to save the results
 if not os.path.exists("Infimal_Conv/InfimalConvolution/ResultsInfConv"):
@@ -20,30 +23,31 @@ torch.manual_seed(61)
 
 # Choice of the (CRRNN) model
 device = 'cpu'
-sigma_training = 5
-t = 10
-exp_name = f'Sigma_{sigma_training}_t_{t}'
-model = utils.load_model(exp_name, device)
+fname = 'WCRR-CNN'
 
+model = utils.load_model(fname, device)
+model.eval()
 
 # Load of the image (.jpg)
 img = cv2.imread("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/Images/Lenna.png", cv2.IMREAD_GRAYSCALE)
 img_torch = torch.tensor(img, device = device).reshape((1,1) + img.shape)/255
 
 # Creation of the noisy image by adding some normal noise
-img_torch_noisy = img_torch + 25/255 * torch.randn_like(img_torch)
+img_torch_noisy = img_torch + 10/255 * torch.randn_like(img_torch)
 
 # Set of the hyperparameters to tune (see Master Thesis for more details)
 lmbdLagrange = 1e-1
 alpha = 5e-2 
 beta = 30
+H = lambda x:x
+Ht = lambda x:x
 
 # image_cleaned corresponds to u in the computations
-img_denoised, z, w, g, psnrImg, ssimImg = reconstruction_map_InfTVCRRNN(model = model, x_noisy=img_torch_noisy, lmbdLagrange=lmbdLagrange, alpha = alpha, beta = beta, maxIter= 200, x_origin=img_torch, maxIterTVRecon = 100, maxIterCRRNNRecon = 100, trackCost = True)
+with torch.no_grad():
+    img_denoised, z, w, g, psnrImg, ssimImg = reconstruction_map_InfStrongTVCRRNN(model = model, x_noisy=img_torch_noisy, maxIter= 20, x_origin=img_torch, trackCost = True)
 
 # Computation of the L2 error matrix
 L2Error = torch.pow(img_denoised - img_torch, 2)
-
 
 fig = plt.figure(figsize=(20,10))
 gs = GridSpec(nrows= 2, ncols = 3)
@@ -81,9 +85,5 @@ ax5.set_title(f"Denoised Image ")
 ax5.imshow(img_denoised.detach().cpu().squeeze(), cmap="gray", vmin=0, vmax=1)
 ax5.set_yticks([])
 ax5.set_xticks([])
-
-fileName = f"1204LennaA{alpha*100:.0f}B{beta:.0f}S{sigma_training:.0f}t{t:.0f}.png"
-path = os.path.join("Infimal_Conv/InfimalConvolution/ResultsInfConv", fileName) 
-plt.savefig(path)
 
 plt.show()

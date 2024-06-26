@@ -9,20 +9,22 @@ from torch.utils import tensorboard
 from tqdm import tqdm
 from torchmetrics import StructuralSimilarityIndexMeasure 
 from torchmetrics.functional import peak_signal_noise_ratio as psnr
-
 ssim = StructuralSimilarityIndexMeasure()
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers")
 sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers")
 from models.utils import build_model
-
-
 sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/utilsInfimalConvolution")
 sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/Infimal_conv/utilsInfimalConvolution")
 from utilsInfConvTraining import CRR_NN_Solver_Training, H_fixedPoint, TV_Solver_Training, fixedPointP, JacobianFixedPointP
 from utilsTv import MoreauProximator
 
+# Construction of the Trainer class to train CRRNN models under the infimal convolution framework
+
 
 class TrainerInfConv:
+
+    """
+    """
 
     def __init__(self, config, seed, device):
         global ssim
@@ -147,10 +149,12 @@ class TrainerInfConv:
 
         log = {}
 
-        
+        # Setting of the Lagrange multiplier value and alpha (coefficient of R_TV)
         lmbdLagrange = self.config["training_options"]["Lagrange"]
         alpha = self.alpha
         lambdaTV = lmbdLagrange/alpha
+
+        # Setting of two gradient operators (over batches and samples)
         moreauProxBatch = MoreauProximator([40, 40], lambdaTV, [None, None], device = self.device, batch = True)
         moreauProx = MoreauProximator([40,40], lambdaTV, [None, None], device = self.device, batch = False)
         for batch_idx, data in enumerate(tbar):
@@ -164,22 +168,25 @@ class TrainerInfConv:
 
             # t-step denoiser
             t_steps=self.config["training_options"]["t_steps"]
-            # Initialization steps
 
+            # Initialization to zero of the intermediate tensors of the ADMM scheme
             z = torch.zeros_like(noisy_data, device=data.device)
             w = torch.zeros_like(noisy_data, device = data.device)
             g = torch.zeros_like(noisy_data, device = data.device)
             Theta1 = torch.zeros_like(noisy_data, device = data.device)
             Theta2 = torch.zeros_like(noisy_data, device = data.device)
 
-            # Differentiable steps
+            # Creation of two Jacobians lists (one for the Tv regularization and the CRRNN regularization)
             JacobiansP_OuterLoop = []
             JacobiansW_OuterLoop = []
 
+            # ADMM scheme
             for t in range(t_steps):
                 # u - optimization
                 u = (1/2*lmbdLagrange+1)*(noisy_data + lmbdLagrange*(z+w+Theta1+g-Theta2))
+
                 # z - optimization
+                # Computation of the dual optimized value P which is needed to reconstruct z through implicit layers
                 with torch.no_grad():
                     P = moreauProxBatch.batch_applyProxPrimalDual(u - w - Theta1, alpha = 1.0)
                     flattenOuputP = []
@@ -197,17 +204,20 @@ class TrainerInfConv:
                     if t > 0:
                         with torch.no_grad():
                             JacobianP = JacobianFixedPointP( flattenSampleP.view_as(Pref), img = dataZ, sigma = 1/tau , lmbd = lambdaTV, device = self.device)
-
                             JacobiansP.append(JacobianP)
+                    # No need to use the implicit layer approach on the first iteration for p
                     if t > 0: 
                         flattenSampleP.register_hook(lambda grad, ns = nsample, tstep =t: torch.linalg.solve(JacobiansP_OuterLoop[tstep][ns].transpose(0,1), grad))
                     P = flattenSampleP.view_as(Pref)
+                    # Reconstruction of Z with P
                     Z = dataZ - lambdaTV*moreauProx.L.applyL(P)
                     samplesZ.append(Z.squeeze())
                 
                 ZBatches = torch.stack(samplesZ, 0)
                 z = torch.unsqueeze(ZBatches, 1)
+
                 # w - optimization
+                # Computation of w using the implicit layer approach
                 with torch.no_grad():
                     noisy_data = u - z - Theta1
                     wOutput = CRR_NN_Solver_Training(noisy_data, self.model, lmbd = (1/lmbdLagrange) * self.model.lmbd_transformed, mu = self.model.mu_transformed, max_iter = 200, batch = True, enforce_positivity = False, device = self.device)
@@ -228,6 +238,7 @@ class TrainerInfConv:
                     flattenSampleW.register_hook(lambda grad, ns = nsample, tstep = t: torch.linalg.solve(JacobiansW_OuterLoop[tstep][ns].transpose(0,1), grad))
                     samplesW.append(flattenSampleW.view_as(wOutputRef))
                 w = torch.stack(samplesW, 0)
+
                 # g - optimization
                 g = torch.clip(u + Theta2, 0)
 
@@ -240,6 +251,7 @@ class TrainerInfConv:
                     JacobiansP_OuterLoop.append(JacobiansP)
                 JacobiansW_OuterLoop.append(JacobiansW)
             output = (1/2*lmbdLagrange+1)*(noisy_data + lmbdLagrange*(z+w+Theta1+g-Theta2))     
+            
             # data fidelity normalizedd
             data_fidelity = (self.criterion(output, data)) / (data.shape[0]) * 40 * 30 / data.shape[2] / data.shape[3]
 
@@ -293,8 +305,9 @@ class TrainerInfConv:
             lmbdLagrange = self.config["training_options"]["Lagrange"]
             alpha = self.alpha
             lambdaTV = lmbdLagrange/alpha
-
-            moreauProx = MoreauProximator([40,40], lambdaTV, [None, None], device = self.device, batch = False)
+            h = noisy_data.shape[2]
+            w = noisy_data.shape[3]
+            moreauProx = MoreauProximator([h,w], lambdaTV, [None, None], device = self.device, batch = False)
 
             with torch.no_grad():
                 z = torch.zeros_like(noisy_data, device=data.device)
