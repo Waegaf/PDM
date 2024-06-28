@@ -1,0 +1,54 @@
+{
+    "activation_params": {
+        "knots_range": 0.1,
+        "n_channels": 16,
+        "n_knots": 11,
+        "name": "spline"
+    },
+    "alpha": 0.05,
+    "exp_name": "InfConv_Sigma_5_t_1_2205",
+    "logging_info": {
+        "epochs_per_val": 1,
+        "log_dir": "C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/InfimalConvolution/Training/Trained_models",
+        "save_epoch": 5
+    },
+    "net_params": {
+        "channels": [
+            1,
+            8,
+            16
+        ],
+        "kernel_size": 7
+    },
+    "number_of_parameters": 6842,
+    "optimizer": {
+        "lr_conv": 0.001,
+        "lr_lmbd": 0.05,
+        "lr_mu": 0.05,
+        "lr_spline_coefficients": 5e-05
+    },
+    "sigma": 5,
+    "train_dataloader": {
+        "batch_size": 8,
+        "num_workers": 1,
+        "shuffle": true,
+        "train_data_file": "C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/preprocessed/new/BSD/train.h5"
+    },
+    "training_options": {
+        "Lagrange": 0.01,
+        "epochs": 10,
+        "lr_scheduler": {
+            "gamma": 0.75,
+            "nb_steps": 10,
+            "use": true
+        },
+        "t_steps": 1,
+        "tv2_lambda": 0.002
+    },
+    "val_dataloader": {
+        "batch_size": 1,
+        "num_workers": 1,
+        "shuffle": false,
+        "val_data_file": "C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/preprocessed/new/BSD/validation.h5"
+    }
+}
