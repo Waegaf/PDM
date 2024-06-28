@@ -12,18 +12,16 @@ if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
 # sys.path.append("C:/Users/waelg/OneDrive/Bureau/EPFL_5_2/Code/convex_ridge_regularizers/Infimal_Conv/utilsInfimalConvolution")
 sys.path.append("/cs/research/vision/home2/wgafaiti/Code/convex_ridge_regularizers/Infimal_conv/utilsInfimalConvolution")
 from utilsTv import TV_reconstruction, Tv_denoising_reconstruction, MoreauProximator, LinearOperator, LinearOperatorBatch
-# from reconstruction_map_crr import AdaGD_Recon, AdaAGD_Recon
 
 
 
-
+# To use during the training phase
 def TV_Solver_Training(y, lmbd, batch, enforce_positivity):
     '''This solver only solves the TV problem in the denoising task, i.e. H = Id'''
     if enforce_positivity:
         bounds = [0.0, float('Inf')]
     else:
         bounds = [None, None]
-
     moreauProx = MoreauProximator([y.shape[2], y.shape[3]], lmbd, bounds, device = y.device, batch = batch)
     if not batch:
         z, P = moreauProx.applyProxPrimalDual(y, alpha = 1.0)
@@ -32,6 +30,7 @@ def TV_Solver_Training(y, lmbd, batch, enforce_positivity):
     return  P
 
 
+# To use during the training phase
 def CRR_NN_Solver_Training(y, model, lmbd = 1, mu = 1, max_iter = 300, batch = True, enforce_positivity = False, device ="cpu"):
     """"This solver uses the adaptive gradient descent scheme """
 
@@ -64,9 +63,6 @@ def CRR_NN_Solver_Training(y, model, lmbd = 1, mu = 1, max_iter = 300, batch = T
             print(x)
         grad = grad_func(x)
 
-        normx = torch.norm(x-x_old, dim = (2,3))
-        normgrad = torch.norm(grad - grad_old, dim = (2,3))
-        diff = normx-normgrad
         alpha_1 = 0.5*(torch.clamp(torch.norm(x-x_old, dim = (2,3)), 1e-7, None))/torch.clamp(torch.norm(grad - grad_old, dim = (2,3)), 1e-7, None)
         alpha_2 = torch.sqrt(1 + theta/2) * alpha
 
@@ -90,13 +86,11 @@ def CRR_NN_Solver_Training(y, model, lmbd = 1, mu = 1, max_iter = 300, batch = T
         theta = alpha / alpha_old
         Theta = beta / beta_old
 
-
         if enforce_positivity:
             x = torch.clamp(x, 0, None)
 
         grad_norm = torch.norm(grad, dim = (2,3))
         if torch.mean(grad_norm).item() < tol:
-            print("tol reached")
             break
         
     return x
@@ -179,14 +173,6 @@ def tstepInfConvDenoiser(model, x_noisy, t_steps, alpha,  **kwargs):
     beta = model.lmbd_transformed
     mu = model.mu_transformed
 
-    # Lipschitz bound of the model estimated in a differentiable way (We probably won't use it with AdaAGD_Recon. So, we should not use it)
-    # if model.training:
-    #     L = torch.clip(model.precise_lipschitz_bound(n_iter = 2, differentiable = True,), 0.1, None)
-
-    #     model.L.data = L
-    # else:
-    #     L = model.L
-
     # Initialization of the tensors
     z = torch.zeros_like(x_noisy)
     w = torch.zeros_like(x_noisy)
@@ -249,7 +235,7 @@ def JacobianProjUnitBall(P, device):
     # is_norm_larger_than_1_2 is of size(1,2*n*m)
     is_norm_larger_than_1_2 = torch.cat((is_norm_larger_than_1, is_norm_larger_than_1), 0)[None,:]
 
-    # Constrution of the tensor background which is 1 if i=j (mod nm) (i.e. if i and j are related)
+    # Construction of the tensor background which is 1 if i=j (mod nm) (i.e. if i and j are related)
     IndicesUP = -(torch.arange(dim, device= device)[:, None] ) + ((torch.arange(2*dim, device= device)[None, :] ))
     boolean = (IndicesUP == dim) | (IndicesUP == 0)
     backgroundUp = torch.where(boolean, torch.tensor(1.0, device= device), torch.tensor(0.0, device= device))

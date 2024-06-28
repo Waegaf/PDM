@@ -5,6 +5,7 @@ from torchmetrics.functional import structural_similarity_index_measure as ssim
 import sys
 import os
 import pylops_gpu
+from tqdm import tqdm
 
 # Projection function to the box(xmin,xmax), i.e. ensure that xmin <= x <= xmax.
 def projectionBox(x, xmin, xmax):
@@ -299,6 +300,89 @@ def Tv_denoising_reconstruction(y, lmbd, **kwargs):
     xDenoised = moreauProx.applyProx(y, alpha = 1)
 
     return xDenoised
+
+
+def StrongConv_TV_denoising_reconstruction(mu, y, **kwargs):
+    max_iter = kwargs.get('max_iter', 1000)
+    tol = kwargs.get('tol', 1e-6)
+    
+    
+    enforce_positivity = kwargs.get('enforce_positivity', True)
+    linop = LinearOperator(y.squeeze().shape, 'cpu')
+    def grad_func(x):
+
+        def RTV(z):
+            nabla0 = linop.L_0*(z.reshape(-1))
+            nabla0_2 = torch.pow(nabla0,2)
+            nabla1 = linop.L_1*(z.reshape(-1))
+            nabla1_2 = torch.pow(nabla1, 2)
+
+            return torch.sum(torch.sqrt(nabla0_2 + nabla1_2 + mu))
+        
+        Jacobian = torch.autograd.functional.jacobian(RTV, x)
+
+        return (x-y) + Jacobian
+    
+    # initial value
+    alpha = 1e-5
+    beta = 1e-5
+    
+    
+    x_old = torch.zeros_like(y)
+
+    grad = grad_func(x_old)
+
+    x = x_old - alpha * grad
+    z = torch.clone(x)
+    
+    pbar = tqdm(range(max_iter))
+
+    theta = float('inf')
+    Theta = float('inf')
+    for i in pbar:
+        grad_old = torch.clone(grad)
+        grad = grad_func(x)
+
+        alpha_1 = (torch.norm(x - x_old) / torch.norm(grad - grad_old)).item() / 2
+        alpha_2 = math.sqrt(1 + theta/2) * alpha
+
+        alpha_old = alpha
+        alpha = min(alpha_1, alpha_2)
+
+        beta_1 = 1 / 4 / alpha_1
+        beta_2 = math.sqrt(1 + Theta/2) * beta
+
+        beta_old = beta
+        beta = min(beta_1, beta_2)
+
+        gamma = (1/math.sqrt(alpha) - math.sqrt(beta)) / (1/math.sqrt(alpha) + math.sqrt(beta)) 
+
+        z_old = torch.clone(z)
+
+        z = x - alpha * grad
+
+        x_old = torch.clone(x)
+
+        x = z + gamma * (z - z_old)
+        
+
+        if enforce_positivity:
+            x = torch.clamp(x, 0, None)
+
+        theta = alpha / alpha_old
+        Theta = beta / beta_old
+
+       
+        # relative change of norm for terminating
+        res = (torch.norm(x_old - x)/torch.norm(x_old)).item()
+
+        pbar.set_description("StrongTv")
+
+        if res < tol:
+            break
+    print("h")
+    return x
+
 
 
 
