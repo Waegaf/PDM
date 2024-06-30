@@ -1,1 +1,0 @@
-from .dottest import dottest
